@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { lessonPlanSchema, problemDemoPlanSchema } from "../../src/shared/schemas";
+import {
+  appSettingsSchema,
+  lessonPlanSchema,
+  modelConfigSchema,
+  problemDemoPlanSchema,
+  videoStatusSchema
+} from "../../src/shared/schemas";
 
 describe("lessonPlanSchema", () => {
   it("accepts a complete lesson plan", () => {
@@ -44,5 +50,104 @@ describe("problemDemoPlanSchema", () => {
     });
 
     expect(parsed.kind).toBe("equation");
+  });
+
+  it("rejects a motion demo plan without motion data", () => {
+    const result = problemDemoPlanSchema.safeParse({
+      kind: "motion",
+      title: "行程问题",
+      originalProblem: "A/B 两地相距 1000m，小明速度是 2m/s。",
+      knownValues: [{ label: "距离", value: 1000, unit: "m" }],
+      target: "求走完全程需要几秒",
+      steps: ["找距离", "找速度", "用时间 = 距离 ÷ 速度"]
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ message: "motion plan requires motion data", path: ["motion"] })
+        ])
+      );
+    }
+  });
+
+  it("rejects an equation demo plan without equation data", () => {
+    const result = problemDemoPlanSchema.safeParse({
+      kind: "equation",
+      title: "买笔问题",
+      originalProblem: "每支笔 2 元，买了 x 支共 10 元。",
+      knownValues: [{ label: "单价", value: 2, unit: "元" }],
+      target: "求购买数量",
+      steps: ["设购买 x 支", "列方程 2x=10", "解得 x=5"]
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ message: "equation plan requires equation data", path: ["equation"] })
+        ])
+      );
+    }
+  });
+
+  it("accepts a high-quality motion demo plan", () => {
+    const parsed = problemDemoPlanSchema.parse({
+      kind: "motion",
+      title: "行程问题",
+      originalProblem: "A/B 两地相距 1000m，小明速度是 2m/s。",
+      knownValues: [
+        { label: "距离", value: 1000, unit: "m" },
+        { label: "速度", value: 2, unit: "m/s" }
+      ],
+      target: "求走完全程需要几秒",
+      steps: ["找距离 1000m", "找速度 2m/s", "时间 = 1000 ÷ 2 = 500s"],
+      motion: {
+        startLabel: "A 地",
+        endLabel: "B 地",
+        distance: 1000,
+        distanceUnit: "m",
+        speed: 2,
+        speedUnit: "m/s",
+        answerSeconds: 500
+      }
+    });
+
+    expect(parsed.motion?.answerSeconds).toBe(500);
+  });
+});
+
+describe("modelConfigSchema", () => {
+  it("accepts api key and model name settings", () => {
+    const parsed = modelConfigSchema.parse({
+      apiKey: "sk-test",
+      modelName: "Qwen/Qwen3-32B"
+    });
+
+    expect(parsed.modelName).toBe("Qwen/Qwen3-32B");
+  });
+});
+
+describe("appSettingsSchema", () => {
+  it("accepts text and video model groups", () => {
+    const parsed = appSettingsSchema.parse({
+      textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
+      videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" }
+    });
+
+    expect(parsed.videoModel.apiKey).toBe("video-key");
+  });
+});
+
+describe("videoStatusSchema", () => {
+  it("accepts a valid video status", () => {
+    expect(videoStatusSchema.parse("InProgress")).toBe("InProgress");
+  });
+
+  it("rejects unsupported video statuses", () => {
+    const result = videoStatusSchema.safeParse("Cancelled");
+
+    expect(result.success).toBe(false);
   });
 });
