@@ -9,6 +9,7 @@ export type TeacherHelperApi = {
   generateLesson(topic: string): Promise<{ id: string; lesson: LessonPlan; videoTask?: VideoTask; videoError?: string }>;
   exportLessonDocx(input: { id: string; title: string; lesson: LessonPlan }): Promise<string>;
   generateDemo(problem: string): Promise<{ id: string; plan: ProblemDemoPlan; url: string }>;
+  refreshVideo(videoId: string): Promise<VideoRecord>;
   listHistory(): Promise<{ lessons: LessonRecord[]; demos: DemoRecord[]; videos: VideoRecord[] }>;
 };
 
@@ -28,6 +29,7 @@ const teacherHelperApi: TeacherHelperApi = {
     plan: ProblemDemoPlan;
     url: string;
   }>,
+  refreshVideo: (videoId) => ipcRenderer.invoke("video:refresh", videoId) as Promise<VideoRecord>,
   listHistory: () => ipcRenderer.invoke("history:list") as Promise<{
     lessons: LessonRecord[];
     demos: DemoRecord[];

@@ -73,6 +73,7 @@ function createBaseDeps(overrides: Record<string, unknown> = {}) {
     now: () => "2026-06-15T03:04:05.000Z",
     generateLessonPlan: vi.fn(),
     createVideoTaskFromLesson: vi.fn(),
+    refreshVideoTaskStatus: vi.fn(),
     analyzeProblemForDemo: vi.fn().mockResolvedValue(demoPlan),
     chooseDemoRenderer: vi.fn().mockReturnValue("equation"),
     renderMotionDemoHtml: vi.fn(),
@@ -168,6 +169,7 @@ describe("registerWorkflowIpcHandlers", () => {
       now: () => createdAt,
       generateLessonPlan: vi.fn().mockResolvedValue(lesson),
       createVideoTaskFromLesson: vi.fn().mockResolvedValue(videoTask),
+      refreshVideoTaskStatus: vi.fn(),
       analyzeProblemForDemo: vi.fn(),
       chooseDemoRenderer: vi.fn(),
       renderMotionDemoHtml: vi.fn(),
@@ -285,6 +287,7 @@ describe("registerWorkflowIpcHandlers", () => {
       now: () => createdAt,
       generateLessonPlan: vi.fn(),
       createVideoTaskFromLesson: vi.fn(),
+      refreshVideoTaskStatus: vi.fn(),
       analyzeProblemForDemo: vi.fn().mockResolvedValue(demoPlan),
       chooseDemoRenderer: vi.fn().mockReturnValue("equation"),
       renderMotionDemoHtml: vi.fn(),
@@ -428,6 +431,7 @@ describe("registerWorkflowIpcHandlers", () => {
       now: () => "2026-06-15T03:04:05.000Z",
       generateLessonPlan: vi.fn(),
       createVideoTaskFromLesson: vi.fn(),
+      refreshVideoTaskStatus: vi.fn(),
       analyzeProblemForDemo: vi.fn(),
       chooseDemoRenderer: vi.fn(),
       renderMotionDemoHtml: vi.fn(),
@@ -523,6 +527,7 @@ describe("registerWorkflowIpcHandlers", () => {
       now: () => "2026-06-15T03:04:05.000Z",
       generateLessonPlan: vi.fn(),
       createVideoTaskFromLesson: vi.fn(),
+      refreshVideoTaskStatus: vi.fn(),
       analyzeProblemForDemo: vi.fn(),
       chooseDemoRenderer: vi.fn(),
       renderMotionDemoHtml: vi.fn(),
@@ -534,5 +539,76 @@ describe("registerWorkflowIpcHandlers", () => {
     });
 
     await expect(fakeIpcMain.handlers.get("history:list")?.({})).resolves.toEqual({ lessons, demos, videos });
+  });
+
+  it("refreshes a video task status and saves the updated record", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const queuedVideo: VideoRecord = {
+      id: "video-1",
+      lessonId: "lesson-1",
+      requestId: "request-1",
+      status: "InQueue",
+      prompt: "prompt",
+      script: "script",
+      createdAt: "2026-06-15T03:04:05.000Z",
+      updatedAt: "2026-06-15T03:04:05.000Z"
+    };
+    const refreshedVideo: VideoRecord = {
+      ...queuedVideo,
+      status: "Succeed",
+      videoUrl: "https://cdn.example.test/video.mp4",
+      updatedAt: "2026-06-15T04:05:06.000Z"
+    };
+    const upsertVideo = vi.fn().mockResolvedValue(undefined);
+    const refreshVideoTaskStatus = vi.fn().mockResolvedValue(refreshedVideo);
+    const deps = createBaseDeps({
+      historyStore: {
+        addLesson: vi.fn(),
+        addDemo: vi.fn(),
+        upsertVideo,
+        listLessons: vi.fn(),
+        listDemos: vi.fn(),
+        listVideos: vi.fn().mockResolvedValue([queuedVideo])
+      },
+      refreshVideoTaskStatus
+    });
+
+    registerWorkflowIpcHandlers(fakeIpcMain, deps);
+    const handler = fakeIpcMain.handlers.get("video:refresh");
+
+    expect(handler).toBeDefined();
+    await expect(handler?.({}, " video-1 ")).resolves.toEqual(refreshedVideo);
+    expect(refreshVideoTaskStatus).toHaveBeenCalledWith({
+      task: queuedVideo,
+      config: completeSettings.videoModel,
+      client: deps.client,
+      now: deps.now
+    });
+    expect(upsertVideo).toHaveBeenCalledWith(refreshedVideo);
+  });
+
+  it("rejects refresh for an unknown video task without calling the provider", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const refreshVideoTaskStatus = vi.fn();
+    const upsertVideo = vi.fn();
+
+    registerWorkflowIpcHandlers(fakeIpcMain, createBaseDeps({
+      historyStore: {
+        addLesson: vi.fn(),
+        addDemo: vi.fn(),
+        upsertVideo,
+        listLessons: vi.fn(),
+        listDemos: vi.fn(),
+        listVideos: vi.fn().mockResolvedValue([])
+      },
+      refreshVideoTaskStatus
+    }));
+
+    const handler = fakeIpcMain.handlers.get("video:refresh");
+
+    expect(handler).toBeDefined();
+    await expect(handler?.({}, "missing-video")).rejects.toThrow("未找到视频任务。");
+    expect(refreshVideoTaskStatus).not.toHaveBeenCalled();
+    expect(upsertVideo).not.toHaveBeenCalled();
   });
 });

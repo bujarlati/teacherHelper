@@ -27,6 +27,7 @@ export type TeacherHelperRendererApi = {
   generateLesson(topic: string): Promise<LessonGenerateResult>;
   exportLessonDocx(input: { id: string; title: string; lesson: LessonPlan }): Promise<string>;
   generateDemo(problem: string): Promise<DemoGenerateResult>;
+  refreshVideo(videoId: string): Promise<VideoRecord>;
   listHistory(): Promise<HistoryListResult>;
 };
 
@@ -51,5 +52,6 @@ export const api: TeacherHelperRendererApi = {
   generateLesson: async (topic) => getApi().generateLesson(topic),
   exportLessonDocx: async (input) => getApi().exportLessonDocx(input),
   generateDemo: async (problem) => getApi().generateDemo(problem),
+  refreshVideo: async (videoId) => getApi().refreshVideo(videoId),
   listHistory: async () => getApi().listHistory()
 };

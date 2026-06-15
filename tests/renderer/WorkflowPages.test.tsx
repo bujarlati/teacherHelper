@@ -54,6 +54,7 @@ describe("workflow pages", () => {
         generateLesson: vi.fn().mockResolvedValue({ id: "lesson-1", lesson, videoTask }),
         exportLessonDocx: vi.fn().mockResolvedValue("D:\\teacherHelper-data\\exports\\一次函数复习.docx"),
         generateDemo: vi.fn().mockResolvedValue({ id: "demo-1", plan: demoPlan, url: "http://127.0.0.1:4321/" }),
+        refreshVideo: vi.fn(),
         listHistory: vi.fn()
       }
     });
@@ -174,5 +175,43 @@ describe("workflow pages", () => {
     expect(screen.getByText("类型：simple")).toBeTruthy();
     expect(screen.getByText("视频任务 video-1")).toBeTruthy();
     expect(screen.getByText("状态：InQueue")).toBeTruthy();
+  });
+
+  test("HistoryPage refreshes a queued video task and shows the returned video URL", async () => {
+    const queuedVideo: VideoRecord = {
+      id: "video-1",
+      lessonId: "lesson-1",
+      requestId: "request-1",
+      status: "InQueue",
+      prompt: "prompt",
+      script: "script",
+      createdAt: "2026-06-15T03:04:05.000Z",
+      updatedAt: "2026-06-15T03:04:05.000Z"
+    };
+    const refreshedVideo: VideoRecord = {
+      ...queuedVideo,
+      status: "Succeed",
+      videoUrl: "https://cdn.example.test/video.mp4",
+      updatedAt: "2026-06-15T04:05:06.000Z"
+    };
+    window.teacherHelper.listHistory = vi.fn().mockResolvedValue({
+      lessons: [],
+      demos: [],
+      videos: [queuedVideo]
+    });
+    window.teacherHelper.refreshVideo = vi.fn().mockResolvedValue(refreshedVideo);
+    const { HistoryPage } = await import("../../src/renderer/pages/HistoryPage");
+
+    render(<HistoryPage />);
+
+    expect(await screen.findByText("视频任务 video-1")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "刷新状态" }));
+
+    await waitFor(() => {
+      expect(window.teacherHelper.refreshVideo).toHaveBeenCalledWith("video-1");
+    });
+    expect(await screen.findByText("状态：Succeed")).toBeTruthy();
+    expect(screen.getByText("https://cdn.example.test/video.mp4")).toBeTruthy();
+    expect(screen.getByText("视频已生成。")).toBeTruthy();
   });
 });

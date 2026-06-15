@@ -38,6 +38,12 @@ type WorkflowDeps = {
     config: AppSettings["videoModel"];
     client: unknown;
   }): Promise<VideoRecord>;
+  refreshVideoTaskStatus(input: {
+    task: VideoRecord;
+    config: AppSettings["videoModel"];
+    client: unknown;
+    now: () => string;
+  }): Promise<VideoRecord>;
   analyzeProblemForDemo(input: {
     problem: string;
     config: AppSettings["textModel"];
@@ -124,6 +130,26 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
     activeDemoServer = result.activeDemoServer;
 
     return result.response;
+  });
+
+  ipcMainLike.handle("video:refresh", async (_event, videoIdInput) => {
+    const videoId = nonEmptyStringSchema.parse(videoIdInput);
+    const settings = await deps.configStore.load();
+    const videos = await deps.historyStore.listVideos();
+    const video = videos.find((item) => item.id === videoId);
+    if (!video) {
+      throw new Error("未找到视频任务。");
+    }
+
+    const updatedVideo = await deps.refreshVideoTaskStatus({
+      task: video,
+      config: settings.videoModel,
+      client: deps.client,
+      now: deps.now
+    });
+    await deps.historyStore.upsertVideo(updatedVideo);
+
+    return updatedVideo;
   });
 
   ipcMainLike.handle("history:list", async () => ({

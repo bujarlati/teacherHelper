@@ -1,9 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
-import { createVideoTaskFromLesson } from "../../src/main/videoWorkflow";
-import type { ModelConfig, LessonPlan } from "../../src/shared/types";
+import { createVideoTaskFromLesson, refreshVideoTaskStatus } from "../../src/main/videoWorkflow";
+import type { ModelConfig, LessonPlan, VideoTaskStatus } from "../../src/shared/types";
+import type { VideoRecord } from "../../src/main/historyStore";
 
 type SubmitClient = {
   submitVideo: (input: { apiKey: string; modelName: string; prompt: string }) => Promise<string>;
+};
+
+type StatusClient = {
+  getVideoStatus: (input: {
+    apiKey: string;
+    requestId: string;
+  }) => Promise<{ status: VideoTaskStatus; videoUrl?: string; reason?: string }>;
 };
 
 function createLesson(overrides: Partial<LessonPlan> = {}): LessonPlan {
@@ -102,3 +110,85 @@ describe("createVideoTaskFromLesson", () => {
     expect(lesson).toEqual(lessonBefore);
   });
 });
+
+describe("refreshVideoTaskStatus", () => {
+  it("updates a queued video record with the provider status and video URL", async () => {
+    const client: StatusClient = {
+      getVideoStatus: vi.fn().mockResolvedValue({
+        status: "Succeed",
+        videoUrl: "https://cdn.example.test/video.mp4"
+      })
+    };
+    const task = createVideoRecord({ status: "InQueue" });
+
+    await expect(
+      refreshVideoTaskStatus({
+        task,
+        config: { apiKey: "video-key", modelName: "video-model" },
+        client,
+        now: () => "2026-06-15T05:00:00.000Z"
+      })
+    ).resolves.toEqual({
+      ...task,
+      status: "Succeed",
+      videoUrl: "https://cdn.example.test/video.mp4",
+      reason: undefined,
+      updatedAt: "2026-06-15T05:00:00.000Z"
+    });
+
+    expect(client.getVideoStatus).toHaveBeenCalledWith({
+      apiKey: "video-key",
+      requestId: "request-lesson-1"
+    });
+  });
+
+  it("marks a successful provider response without a URL as failed", async () => {
+    const client: StatusClient = {
+      getVideoStatus: vi.fn().mockResolvedValue({ status: "Succeed" })
+    };
+    const task = createVideoRecord({ status: "InProgress" });
+
+    await expect(
+      refreshVideoTaskStatus({
+        task,
+        config: { apiKey: "video-key", modelName: "video-model" },
+        client,
+        now: () => "2026-06-15T05:00:00.000Z"
+      })
+    ).resolves.toMatchObject({
+      status: "Failed",
+      reason: "视频生成成功但未返回视频地址。",
+      updatedAt: "2026-06-15T05:00:00.000Z"
+    });
+  });
+
+  it("requires a video API key before refreshing status", async () => {
+    const client: StatusClient = {
+      getVideoStatus: vi.fn()
+    };
+
+    await expect(
+      refreshVideoTaskStatus({
+        task: createVideoRecord(),
+        config: { apiKey: "", modelName: "video-model" },
+        client,
+        now: () => "2026-06-15T05:00:00.000Z"
+      })
+    ).rejects.toThrow("请先配置视频模型 API Key。");
+    expect(client.getVideoStatus).not.toHaveBeenCalled();
+  });
+});
+
+function createVideoRecord(overrides: Partial<VideoRecord> = {}): VideoRecord {
+  return {
+    id: "video-1",
+    lessonId: "lesson-1",
+    requestId: "request-lesson-1",
+    status: "InQueue",
+    prompt: "A classroom animation showing equation balance with a scale.",
+    script: "画面展示天平左右两边同时增加砝码，保持平衡。",
+    createdAt: "2026-06-15T01:02:03.000Z",
+    updatedAt: "2026-06-15T01:02:03.000Z",
+    ...overrides
+  };
+}
