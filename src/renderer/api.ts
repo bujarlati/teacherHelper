@@ -21,7 +21,7 @@ export function getApi(): TeacherHelperRendererApi {
 }
 
 export const api: TeacherHelperRendererApi = {
-  loadSettings: () => getApi().loadSettings(),
-  saveSettings: (settings) => getApi().saveSettings(settings),
-  clearSettings: () => getApi().clearSettings()
+  loadSettings: async () => getApi().loadSettings(),
+  saveSettings: async (settings) => getApi().saveSettings(settings),
+  clearSettings: async () => getApi().clearSettings()
 };

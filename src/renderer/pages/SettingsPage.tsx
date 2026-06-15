@@ -24,25 +24,33 @@ type StatusMessage = {
 export function SettingsPage(): ReactElement {
   const [settings, setSettings] = useState<AppSettings>(emptySettings);
   const [status, setStatus] = useState<StatusMessage>({ tone: "muted", text: "正在读取本机设置..." });
+  const [isLoading, setIsLoading] = useState(true);
   const [isBusy, setIsBusy] = useState(false);
+  const controlsDisabled = isLoading || isBusy;
 
   useEffect(() => {
     let isMounted = true;
 
-    api.loadSettings()
-      .then((loadedSettings) => {
+    void (async () => {
+      try {
+        const loadedSettings = await api.loadSettings();
+
         if (!isMounted) {
           return;
         }
 
         setSettings(loadedSettings);
         setStatus({ tone: "muted", text: "设置仅保存在本机。" });
-      })
-      .catch(() => {
+      } catch {
         if (isMounted) {
           setStatus({ tone: "error", text: "读取本机设置失败。" });
         }
-      });
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    })();
 
     return () => {
       isMounted = false;
@@ -97,6 +105,7 @@ export function SettingsPage(): ReactElement {
             <input
               type="password"
               autoComplete="off"
+              disabled={controlsDisabled}
               value={settings.textModel.apiKey}
               onChange={(event) => setSettings({
                 ...settings,
@@ -108,6 +117,7 @@ export function SettingsPage(): ReactElement {
             <span>文本模型名</span>
             <input
               autoComplete="off"
+              disabled={controlsDisabled}
               value={settings.textModel.modelName}
               onChange={(event) => setSettings({
                 ...settings,
@@ -124,6 +134,7 @@ export function SettingsPage(): ReactElement {
             <input
               type="password"
               autoComplete="off"
+              disabled={controlsDisabled}
               value={settings.videoModel.apiKey}
               onChange={(event) => setSettings({
                 ...settings,
@@ -135,6 +146,7 @@ export function SettingsPage(): ReactElement {
             <span>视频模型名</span>
             <input
               autoComplete="off"
+              disabled={controlsDisabled}
               value={settings.videoModel.modelName}
               onChange={(event) => setSettings({
                 ...settings,
@@ -145,8 +157,8 @@ export function SettingsPage(): ReactElement {
         </fieldset>
 
         <div className="form-actions">
-          <button type="submit" disabled={isBusy}>保存设置</button>
-          <button type="button" className="secondary-button" disabled={isBusy} onClick={() => void handleClear()}>
+          <button type="submit" disabled={controlsDisabled}>保存设置</button>
+          <button type="button" className="secondary-button" disabled={controlsDisabled} onClick={() => void handleClear()}>
             清空本地设置
           </button>
         </div>
