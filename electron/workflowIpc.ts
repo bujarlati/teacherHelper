@@ -61,6 +61,7 @@ const exportLessonInputSchema = z.object({
 
 export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: WorkflowDeps): void {
   let activeDemoServer: DemoServer | undefined;
+  let demoQueue: Promise<unknown> = Promise.resolve();
 
   ipcMainLike.handle("lesson:generate", async (_event, topicInput) => {
     const topic = nonEmptyStringSchema.parse(topicInput);
@@ -78,22 +79,27 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
     });
 
     let videoTask: VideoRecord | undefined;
+    let videoError: string | undefined;
     if (settings.videoModel.apiKey.trim() && settings.videoModel.modelName.trim()) {
-      videoTask = await deps.createVideoTaskFromLesson({
-        lessonId: id,
-        lesson,
-        config: settings.videoModel,
-        client: deps.client
-      });
-      await deps.historyStore.upsertVideo(videoTask);
+      try {
+        videoTask = await deps.createVideoTaskFromLesson({
+          lessonId: id,
+          lesson,
+          config: settings.videoModel,
+          client: deps.client
+        });
+        await deps.historyStore.upsertVideo(videoTask);
+      } catch (error) {
+        videoError = getErrorMessage(error);
+      }
     }
 
-    return { id, lesson, videoTask };
+    return { id, lesson, videoTask, videoError };
   });
 
   ipcMainLike.handle("lesson:exportDocx", async (_event, input) => {
     const parsed = exportLessonInputSchema.parse(input);
-    const filePath = join(deps.dataDir, "exports", `${safeFileName(parsed.title)}.docx`);
+    const filePath = join(deps.dataDir, "exports", `${safeFileName(parsed.title)}-${safeFileName(parsed.id)}.docx`);
 
     await deps.exportLessonDocx({ filePath, lesson: parsed.lesson });
     await updateLessonWordPath(deps.historyStore, parsed.id, filePath);
@@ -102,23 +108,52 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
   });
 
   ipcMainLike.handle("demo:generate", async (_event, problemInput) => {
-    const problem = nonEmptyStringSchema.parse(problemInput);
-    const settings = await deps.configStore.load();
-    const plan = await deps.analyzeProblemForDemo({ problem, config: settings.textModel, client: deps.client });
-    const renderer = deps.chooseDemoRenderer(plan);
-    const html = renderDemoHtml(renderer, plan, deps);
-    const id = deps.createId();
-    const createdAt = deps.now();
-    const demoDir = join(deps.dataDir, "demos", id);
+    const queuedDemo = demoQueue.then(
+      () => generateDemo(problemInput, deps, activeDemoServer),
+      () => generateDemo(problemInput, deps, activeDemoServer)
+    );
 
-    await mkdir(demoDir, { recursive: true });
-    await writeFile(join(demoDir, "index.html"), html, "utf8");
+    demoQueue = queuedDemo
+      .then((result) => {
+        activeDemoServer = result.activeDemoServer;
+      })
+      .catch(() => undefined);
 
-    if (activeDemoServer) {
-      await activeDemoServer.close();
-    }
-    activeDemoServer = await deps.startDemoServer(demoDir);
-    await deps.openExternal(activeDemoServer.url);
+    const result = await queuedDemo;
+    activeDemoServer = result.activeDemoServer;
+
+    return result.response;
+  });
+
+  ipcMainLike.handle("history:list", async () => ({
+    lessons: await deps.historyStore.listLessons(),
+    demos: await deps.historyStore.listDemos(),
+    videos: await deps.historyStore.listVideos()
+  }));
+}
+
+async function generateDemo(
+  problemInput: unknown,
+  deps: WorkflowDeps,
+  activeDemoServer: DemoServer | undefined
+): Promise<{ response: { id: string; plan: ProblemDemoPlan; url: string }; activeDemoServer: DemoServer }> {
+  const problem = nonEmptyStringSchema.parse(problemInput);
+  const settings = await deps.configStore.load();
+  const plan = await deps.analyzeProblemForDemo({ problem, config: settings.textModel, client: deps.client });
+  const renderer = deps.chooseDemoRenderer(plan);
+  const html = renderDemoHtml(renderer, plan, deps);
+  const id = deps.createId();
+  const createdAt = deps.now();
+  const demoDir = join(deps.dataDir, "demos", id);
+
+  await mkdir(demoDir, { recursive: true });
+  await writeFile(join(demoDir, "index.html"), html, "utf8");
+
+  let newDemoServer: DemoServer | undefined;
+  try {
+    newDemoServer = await deps.startDemoServer(demoDir);
+    const url = newDemoServer.url;
+    await deps.openExternal(url);
 
     await deps.historyStore.addDemo({
       id,
@@ -129,14 +164,21 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
       createdAt
     });
 
-    return { id, plan, url: activeDemoServer.url };
-  });
+    if (activeDemoServer) {
+      await activeDemoServer.close();
+    }
 
-  ipcMainLike.handle("history:list", async () => ({
-    lessons: await deps.historyStore.listLessons(),
-    demos: await deps.historyStore.listDemos(),
-    videos: await deps.historyStore.listVideos()
-  }));
+    const promotedDemoServer = newDemoServer;
+    newDemoServer = undefined;
+
+    return { response: { id, plan, url }, activeDemoServer: promotedDemoServer };
+  } catch (error) {
+    if (newDemoServer) {
+      await newDemoServer.close();
+    }
+
+    throw error;
+  }
 }
 
 function renderDemoHtml(renderer: "motion" | "equation" | "simple", plan: ProblemDemoPlan, deps: WorkflowDeps): string {
@@ -164,4 +206,8 @@ function safeFileName(value: string): string {
     .slice(0, 80);
 
   return safe || "lesson";
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : "视频任务提交失败。";
 }

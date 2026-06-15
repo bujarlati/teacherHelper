@@ -6,7 +6,7 @@ export type TeacherHelperApi = {
   loadSettings(): Promise<AppSettings>;
   saveSettings(settings: AppSettings): Promise<void>;
   clearSettings(): Promise<void>;
-  generateLesson(topic: string): Promise<{ id: string; lesson: LessonPlan; videoTask?: VideoTask }>;
+  generateLesson(topic: string): Promise<{ id: string; lesson: LessonPlan; videoTask?: VideoTask; videoError?: string }>;
   exportLessonDocx(input: { id: string; title: string; lesson: LessonPlan }): Promise<string>;
   generateDemo(problem: string): Promise<{ id: string; plan: ProblemDemoPlan; url: string }>;
   listHistory(): Promise<{ lessons: LessonRecord[]; demos: DemoRecord[]; videos: VideoRecord[] }>;
@@ -20,6 +20,7 @@ const teacherHelperApi: TeacherHelperApi = {
     id: string;
     lesson: LessonPlan;
     videoTask?: VideoTask;
+    videoError?: string;
   }>,
   exportLessonDocx: (input) => ipcRenderer.invoke("lesson:exportDocx", input) as Promise<string>,
   generateDemo: (problem) => ipcRenderer.invoke("demo:generate", problem) as Promise<{

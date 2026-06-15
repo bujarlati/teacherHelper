@@ -102,6 +102,23 @@ describe("workflow pages", () => {
     expect(await screen.findByText("D:\\teacherHelper-data\\exports\\一次函数复习.docx")).toBeTruthy();
   });
 
+  test("LessonPage keeps the generated lesson visible when video submission fails", async () => {
+    window.teacherHelper.generateLesson = vi.fn().mockResolvedValue({
+      id: "lesson-1",
+      lesson,
+      videoError: "video quota exceeded"
+    });
+    const { LessonPage } = await import("../../src/renderer/pages/LessonPage");
+
+    render(<LessonPage />);
+
+    fireEvent.change(screen.getByLabelText("课题"), { target: { value: "一次函数" } });
+    fireEvent.click(screen.getByRole("button", { name: "生成教案" }));
+
+    expect(await screen.findByText("# 一次函数复习", { exact: false })).toBeTruthy();
+    expect(screen.getByText("教案已生成，视频任务提交失败：video quota exceeded")).toBeTruthy();
+  });
+
   test("DemoPage generates a demo and shows the returned URL and plan details", async () => {
     const { DemoPage } = await import("../../src/renderer/pages/DemoPage");
 

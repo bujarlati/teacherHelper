@@ -5,6 +5,7 @@ export type LessonGenerateResult = {
   id: string;
   lesson: LessonPlan;
   videoTask?: VideoTask;
+  videoError?: string;
 };
 
 export type DemoGenerateResult = {

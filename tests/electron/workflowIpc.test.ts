@@ -8,6 +8,12 @@ import type { DemoRecord, LessonRecord, VideoRecord } from "../../src/main/histo
 
 type Handler = (_event: unknown, ...args: unknown[]) => unknown;
 
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve(value: T): void;
+  reject(error: unknown): void;
+};
+
 function createFakeIpcMain() {
   const handlers = new Map<string, Handler>();
 
@@ -16,6 +22,66 @@ function createFakeIpcMain() {
     handle(channel: string, handler: Handler) {
       handlers.set(channel, handler);
     }
+  };
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return { promise, resolve, reject };
+}
+
+async function waitForAssertion(assertion: () => void): Promise<void> {
+  const deadline = Date.now() + 1000;
+  let lastError: unknown;
+
+  while (Date.now() < deadline) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
+  throw lastError;
+}
+
+function createBaseDeps(overrides: Record<string, unknown> = {}) {
+  return {
+    configStore: { load: vi.fn().mockResolvedValue(completeSettings) },
+    historyStore: {
+      addLesson: vi.fn(),
+      addDemo: vi.fn(),
+      upsertVideo: vi.fn(),
+      listLessons: vi.fn(),
+      listDemos: vi.fn(),
+      listVideos: vi.fn()
+    },
+    dataDir: tmpDir,
+    client: {},
+    createId: vi.fn()
+      .mockReturnValueOnce("generated-1")
+      .mockReturnValueOnce("generated-2")
+      .mockReturnValue("generated-next"),
+    now: () => "2026-06-15T03:04:05.000Z",
+    generateLessonPlan: vi.fn(),
+    createVideoTaskFromLesson: vi.fn(),
+    analyzeProblemForDemo: vi.fn().mockResolvedValue(demoPlan),
+    chooseDemoRenderer: vi.fn().mockReturnValue("equation"),
+    renderMotionDemoHtml: vi.fn(),
+    renderEquationDemoHtml: vi.fn().mockReturnValue("<!doctype html><title>demo</title>"),
+    renderSimpleDemoHtml: vi.fn(),
+    startDemoServer: vi.fn(),
+    openExternal: vi.fn().mockResolvedValue(undefined),
+    exportLessonDocx: vi.fn(),
+    ...overrides
   };
 }
 
@@ -125,6 +191,41 @@ describe("registerWorkflowIpcHandlers", () => {
     expect(upsertedVideos).toEqual([videoTask]);
   });
 
+  it("returns a lesson with a video error when video submission fails", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const addedLessons: LessonRecord[] = [];
+    const upsertVideo = vi.fn();
+
+    registerWorkflowIpcHandlers(fakeIpcMain, createBaseDeps({
+      historyStore: {
+        addLesson: async (record: LessonRecord) => { addedLessons.push(record); },
+        addDemo: vi.fn(),
+        upsertVideo,
+        listLessons: vi.fn(),
+        listDemos: vi.fn(),
+        listVideos: vi.fn()
+      },
+      createId: () => "lesson-1",
+      now: () => "2026-06-15T01:02:03.000Z",
+      generateLessonPlan: vi.fn().mockResolvedValue(lesson),
+      createVideoTaskFromLesson: vi.fn().mockRejectedValue(new Error("video quota exceeded"))
+    }));
+
+    await expect(fakeIpcMain.handlers.get("lesson:generate")?.({}, " 一次函数 ")).resolves.toEqual({
+      id: "lesson-1",
+      lesson,
+      videoError: "video quota exceeded"
+    });
+    expect(addedLessons).toEqual([{
+      id: "lesson-1",
+      title: lesson.title,
+      topic: "一次函数",
+      markdown: lesson.markdown,
+      createdAt: "2026-06-15T01:02:03.000Z"
+    }]);
+    expect(upsertVideo).not.toHaveBeenCalled();
+  });
+
   it("generates a demo, writes index.html, starts the server, opens the URL, and saves demo history", async () => {
     const fakeIpcMain = createFakeIpcMain();
     const addedDemos: DemoRecord[] = [];
@@ -173,6 +274,77 @@ describe("registerWorkflowIpcHandlers", () => {
     }]);
   });
 
+  it("closes a newly started demo server when opening it fails and does not make it active", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const failedServerClose = vi.fn().mockResolvedValue(undefined);
+    const successfulServerClose = vi.fn().mockResolvedValue(undefined);
+    const openExternal = vi.fn()
+      .mockRejectedValueOnce(new Error("cannot open browser"))
+      .mockResolvedValueOnce(undefined);
+
+    registerWorkflowIpcHandlers(fakeIpcMain, createBaseDeps({
+      createId: vi.fn()
+        .mockReturnValueOnce("failed-demo")
+        .mockReturnValueOnce("successful-demo"),
+      startDemoServer: vi.fn()
+        .mockResolvedValueOnce({ url: "http://127.0.0.1:5001/", close: failedServerClose })
+        .mockResolvedValueOnce({ url: "http://127.0.0.1:5002/", close: successfulServerClose }),
+      openExternal
+    }));
+
+    await expect(fakeIpcMain.handlers.get("demo:generate")?.({}, " 第一次 ")).rejects.toThrow("cannot open browser");
+    expect(failedServerClose).toHaveBeenCalledTimes(1);
+
+    await expect(fakeIpcMain.handlers.get("demo:generate")?.({}, " 第二次 ")).resolves.toMatchObject({
+      id: "successful-demo",
+      url: "http://127.0.0.1:5002/"
+    });
+    expect(failedServerClose).toHaveBeenCalledTimes(1);
+    expect(successfulServerClose).not.toHaveBeenCalled();
+  });
+
+  it("serializes concurrent demo generation and leaves only the latest server active", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const firstStart = createDeferred<{ url: string; close(): Promise<void> }>();
+    const secondStart = createDeferred<{ url: string; close(): Promise<void> }>();
+    const firstServerClose = vi.fn().mockResolvedValue(undefined);
+    const secondServerClose = vi.fn().mockResolvedValue(undefined);
+    const startDemoServer = vi.fn()
+      .mockReturnValueOnce(firstStart.promise)
+      .mockReturnValueOnce(secondStart.promise);
+    const addDemo = vi.fn().mockResolvedValue(undefined);
+
+    registerWorkflowIpcHandlers(fakeIpcMain, createBaseDeps({
+      createId: vi.fn()
+        .mockReturnValueOnce("first-demo")
+        .mockReturnValueOnce("second-demo"),
+      historyStore: {
+        addLesson: vi.fn(),
+        addDemo,
+        upsertVideo: vi.fn(),
+        listLessons: vi.fn(),
+        listDemos: vi.fn(),
+        listVideos: vi.fn()
+      },
+      startDemoServer
+    }));
+
+    const firstResult = fakeIpcMain.handlers.get("demo:generate")?.({}, " 第一道题 ") as Promise<unknown>;
+    const secondResult = fakeIpcMain.handlers.get("demo:generate")?.({}, " 第二道题 ") as Promise<unknown>;
+
+    await waitForAssertion(() => expect(startDemoServer).toHaveBeenCalled());
+    expect(startDemoServer).toHaveBeenCalledTimes(1);
+
+    firstStart.resolve({ url: "http://127.0.0.1:6001/", close: firstServerClose });
+    await expect(firstResult).resolves.toMatchObject({ id: "first-demo", url: "http://127.0.0.1:6001/" });
+    await waitForAssertion(() => expect(startDemoServer).toHaveBeenCalledTimes(2));
+
+    secondStart.resolve({ url: "http://127.0.0.1:6002/", close: secondServerClose });
+    await expect(secondResult).resolves.toMatchObject({ id: "second-demo", url: "http://127.0.0.1:6002/" });
+    expect(firstServerClose).toHaveBeenCalledTimes(1);
+    expect(secondServerClose).not.toHaveBeenCalled();
+  });
+
   it("rejects an invalid lesson export payload before exporting", async () => {
     const fakeIpcMain = createFakeIpcMain();
     const exportLessonDocx = vi.fn();
@@ -207,6 +379,47 @@ describe("registerWorkflowIpcHandlers", () => {
       fakeIpcMain.handlers.get("lesson:exportDocx")?.({}, { id: "lesson-1", title: "坏教案", lesson: { title: "" } })
     ).rejects.toThrow();
     expect(exportLessonDocx).not.toHaveBeenCalled();
+  });
+
+  it("exports lessons with the same title to distinct id-based file paths", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const exportLessonDocx = vi.fn().mockResolvedValue(undefined);
+    const updatedLessons: LessonRecord[] = [];
+    const lessons: LessonRecord[] = [
+      { id: "lesson/one", title: lesson.title, topic: "一次函数", createdAt: "2026-06-15T01:02:03.000Z" },
+      { id: "lesson:two", title: lesson.title, topic: "一次函数", createdAt: "2026-06-15T02:03:04.000Z" }
+    ];
+
+    registerWorkflowIpcHandlers(fakeIpcMain, createBaseDeps({
+      historyStore: {
+        addLesson: async (record: LessonRecord) => { updatedLessons.push(record); },
+        addDemo: vi.fn(),
+        upsertVideo: vi.fn(),
+        listLessons: vi.fn().mockResolvedValue(lessons),
+        listDemos: vi.fn(),
+        listVideos: vi.fn()
+      },
+      exportLessonDocx
+    }));
+
+    const firstPath = await fakeIpcMain.handlers.get("lesson:exportDocx")?.({}, {
+      id: "lesson/one",
+      title: lesson.title,
+      lesson
+    });
+    const secondPath = await fakeIpcMain.handlers.get("lesson:exportDocx")?.({}, {
+      id: "lesson:two",
+      title: lesson.title,
+      lesson
+    });
+
+    expect(firstPath).not.toBe(secondPath);
+    expect(firstPath).toContain("一次函数复习-lesson_one.docx");
+    expect(secondPath).toContain("一次函数复习-lesson_two.docx");
+    expect(updatedLessons).toEqual([
+      { ...lessons[0], wordPath: firstPath },
+      { ...lessons[1], wordPath: secondPath }
+    ]);
   });
 
   it("lists lesson, demo, and video history from the store", async () => {

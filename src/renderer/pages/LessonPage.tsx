@@ -14,6 +14,7 @@ type LessonResult = {
   id: string;
   lesson: LessonPlan;
   videoTask?: VideoTask;
+  videoError?: string;
 };
 
 export function LessonPage(): ReactElement {
@@ -43,10 +44,8 @@ export function LessonPage(): ReactElement {
       const nextResult = await api.generateLesson(trimmedTopic);
       setResult(nextResult);
       setStatus({
-        tone: "success",
-        text: nextResult.videoTask
-          ? `视频任务已提交：${nextResult.videoTask.status}`
-          : "未配置视频模型，仅保留视频脚本和提示词。"
+        tone: nextResult.videoError ? "error" : "success",
+        text: getLessonGenerateStatus(nextResult)
       });
     } catch (error) {
       setStatus({ tone: "error", text: getErrorMessage(error, "生成教案失败，请检查设置后重试。") });
@@ -138,4 +137,15 @@ export function LessonPage(): ReactElement {
 
 function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function getLessonGenerateStatus(result: LessonResult): string {
+  if (result.videoTask) {
+    return `视频任务已提交：${result.videoTask.status}`;
+  }
+  if (result.videoError) {
+    return `教案已生成，视频任务提交失败：${result.videoError}`;
+  }
+
+  return "未配置视频模型，仅保留视频脚本和提示词。";
 }
