@@ -4,19 +4,19 @@ import { readJsonFile, writeJsonFile } from "./jsonStore.js";
 
 export type LessonRecord = {
   id: string;
-  topic: string;
   title: string;
-  markdown: string;
+  topic: string;
   createdAt: string;
+  markdown?: string;
+  wordPath?: string;
 };
 
 export type DemoRecord = {
   id: string;
-  lessonId?: string;
   title: string;
+  problem: string;
   kind: DemoKind;
-  originalProblem: string;
-  filePath: string;
+  demoPath: string;
   createdAt: string;
 };
 
