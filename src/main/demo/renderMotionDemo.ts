@@ -208,9 +208,9 @@ export function renderMotionDemoHtml(plan: ProblemDemoPlan): string {
       <div class="metrics">
         <div id="timer" class="timer">计时：0.0 秒</div>
         <div class="controls">
-          <button id="start-button" class="primary" type="button">开始</button>
-          <button id="pause-button" type="button">暂停</button>
-          <button id="replay-button" type="button">重播</button>
+          <button id="start" class="primary" type="button">开始</button>
+          <button id="pause" type="button">暂停</button>
+          <button id="replay" type="button">重播</button>
         </div>
       </div>
     </section>
@@ -229,9 +229,9 @@ export function renderMotionDemoHtml(plan: ProblemDemoPlan): string {
     const timer = document.getElementById("timer");
     const walker = document.getElementById("walker");
     const track = document.getElementById("track");
-    const startButton = document.getElementById("start-button");
-    const pauseButton = document.getElementById("pause-button");
-    const replayButton = document.getElementById("replay-button");
+    const startButton = document.getElementById("start");
+    const pauseButton = document.getElementById("pause");
+    const replayButton = document.getElementById("replay");
     let startedAt = 0;
     let elapsed = 0;
     let frameId = 0;

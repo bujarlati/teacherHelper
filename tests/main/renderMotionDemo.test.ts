@@ -67,9 +67,9 @@ describe("renderMotionDemoHtml", () => {
   it("includes stable controls and scene elements for future browser checks", () => {
     const html = renderMotionDemoHtml(motionPlan());
 
-    expect(html).toContain('id="start-button"');
-    expect(html).toContain('id="pause-button"');
-    expect(html).toContain('id="replay-button"');
+    expect(html).toContain('id="start"');
+    expect(html).toContain('id="pause"');
+    expect(html).toContain('id="replay"');
     expect(html).toContain('id="timer"');
     expect(html).toContain('id="walker"');
     expect(html).toContain('id="track"');
