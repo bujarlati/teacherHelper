@@ -18,7 +18,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -178,17 +179,29 @@ label span {
   color: #4b5754;
 }
 
-input {
+input,
+textarea {
   width: 100%;
-  min-height: 42px;
   border: 1px solid #c8d1cc;
   border-radius: 6px;
-  padding: 0 12px;
   color: #202927;
   background: #ffffff;
 }
 
-input:focus {
+input {
+  min-height: 42px;
+  padding: 0 12px;
+}
+
+textarea {
+  min-height: 120px;
+  padding: 12px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+input:focus,
+textarea:focus {
   border-color: #40746a;
   outline: 3px solid #cfe0da;
 }
@@ -206,6 +219,118 @@ input:focus {
 
 .secondary-button:hover:not(:disabled) {
   background: #edf4ef;
+}
+
+.workflow-form {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.path-output,
+.empty-state {
+  margin: 0 0 18px;
+  color: #53615d;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.path-output {
+  border: 1px solid #d2d9d5;
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #fbfcfa;
+  color: #2f6f4f;
+  font-weight: 600;
+}
+
+.result-section {
+  display: grid;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+h2 {
+  margin: 0;
+  color: #1f2d2b;
+  font-size: 22px;
+  line-height: 1.3;
+}
+
+.markdown-output {
+  min-height: 260px;
+  max-height: 56vh;
+  margin: 0;
+  border: 1px solid #d2d9d5;
+  border-radius: 8px;
+  padding: 18px;
+  overflow: auto;
+  color: #202927;
+  background: #fbfcfa;
+  font: 14px/1.7 Consolas, "Microsoft YaHei", monospace;
+  white-space: pre-wrap;
+}
+
+.metadata-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.metadata-list div {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 12px;
+  border-bottom: 1px solid #d7ddd8;
+  padding-bottom: 10px;
+}
+
+.metadata-list dt {
+  color: #65726f;
+  font-weight: 700;
+}
+
+.metadata-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.history-grid {
+  display: grid;
+  gap: 24px;
+}
+
+.history-grid section {
+  display: grid;
+  gap: 12px;
+}
+
+.record-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.record-list li {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #d2d9d5;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfcfa;
+}
+
+.record-list strong,
+.record-list span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.record-list span {
+  color: #53615d;
+  line-height: 1.5;
 }
 
 .placeholder-panel {

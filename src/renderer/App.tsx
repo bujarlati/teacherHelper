@@ -1,5 +1,8 @@
 import { useState } from "react";
 import type { ReactElement } from "react";
+import { DemoPage } from "./pages/DemoPage";
+import { HistoryPage } from "./pages/HistoryPage";
+import { LessonPage } from "./pages/LessonPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
 type PageKey = "lesson" | "demo" | "history" | "settings";
@@ -15,21 +18,6 @@ const navItems: NavItem[] = [
   { key: "history", label: "历史记录" },
   { key: "settings", label: "设置" }
 ];
-
-const placeholderCopy: Record<Exclude<PageKey, "settings">, { title: string; text: string }> = {
-  lesson: {
-    title: "今日备课",
-    text: "后续会在这里整理课题、学情、教学目标和导出入口。"
-  },
-  demo: {
-    title: "题目演示",
-    text: "后续会在这里生成题目动画演示和课堂讲解素材。"
-  },
-  history: {
-    title: "历史记录",
-    text: "后续会在这里查看已生成的教案、视频任务和课堂资料。"
-  }
-};
 
 export function App(): ReactElement {
   const [activePage, setActivePage] = useState<PageKey>("lesson");
@@ -57,15 +45,10 @@ export function App(): ReactElement {
       </aside>
 
       <main className="content-area">
-        {activePage === "settings" ? (
-          <SettingsPage />
-        ) : (
-          <section className="workspace-panel placeholder-panel" aria-labelledby={`${activePage}-title`}>
-            <p className="eyebrow">工作区</p>
-            <h1 id={`${activePage}-title`}>{placeholderCopy[activePage].title}</h1>
-            <p>{placeholderCopy[activePage].text}</p>
-          </section>
-        )}
+        {activePage === "lesson" ? <LessonPage /> : null}
+        {activePage === "demo" ? <DemoPage /> : null}
+        {activePage === "history" ? <HistoryPage /> : null}
+        {activePage === "settings" ? <SettingsPage /> : null}
       </main>
     </div>
   );
