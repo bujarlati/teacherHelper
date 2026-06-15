@@ -13,7 +13,7 @@ export function renderMotionDemoHtml(plan: ProblemDemoPlan): string {
     })
     .join("");
   const steps = plan.steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("");
-  const duration = Math.max(motion.answerSeconds, 1);
+  const duration = motion.answerSeconds;
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -87,6 +87,12 @@ export function renderMotionDemoHtml(plan: ProblemDemoPlan): string {
       border-radius: 8px;
       padding: 12px 14px;
       background: #fbfcff;
+    }
+
+    .facts span,
+    .facts strong {
+      min-width: 0;
+      overflow-wrap: anywhere;
     }
 
     .scene {

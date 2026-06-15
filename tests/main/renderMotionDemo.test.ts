@@ -1,6 +1,23 @@
+import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import { renderMotionDemoHtml } from "../../src/main/demo/renderMotionDemo";
 import type { ProblemDemoPlan } from "../../src/shared/types";
+
+type JsdomWindow = Window & typeof globalThis;
+type JsdomInstance = {
+  window: JsdomWindow;
+};
+type JsdomConstructor = new (
+  html: string,
+  options: {
+    beforeParse?: (window: JsdomWindow) => void;
+    pretendToBeVisual?: boolean;
+    runScripts?: "dangerously";
+  }
+) => JsdomInstance;
+
+const require = createRequire(import.meta.url);
+const { JSDOM } = require("jsdom") as { JSDOM: JsdomConstructor };
 
 function motionPlan(overrides: Partial<ProblemDemoPlan> = {}): ProblemDemoPlan {
   return {
@@ -73,5 +90,89 @@ describe("renderMotionDemoHtml", () => {
     expect(html).toContain('id="timer"');
     expect(html).toContain('id="walker"');
     expect(html).toContain('id="track"');
+  });
+
+  it("uses fractional answer seconds as the animation duration", () => {
+    const html = renderMotionDemoHtml(
+      motionPlan({
+        motion: {
+          startLabel: "起点",
+          endLabel: "终点",
+          distance: 1,
+          distanceUnit: "m",
+          speed: 2,
+          speedUnit: "m/s",
+          answerSeconds: 0.5
+        }
+      })
+    );
+
+    expect(html).toContain("const totalSeconds = 0.5;");
+    expect(html).not.toContain("const totalSeconds = 1;");
+  });
+
+  it("runs generated playback controls in the browser script", () => {
+    let now = 0;
+    const frames: FrameRequestCallback[] = [];
+    const html = renderMotionDemoHtml(
+      motionPlan({
+        motion: {
+          startLabel: "起点",
+          endLabel: "终点",
+          distance: 1,
+          distanceUnit: "m",
+          speed: 2,
+          speedUnit: "m/s",
+          answerSeconds: 0.5
+        }
+      })
+    );
+
+    const dom = new JSDOM(html, {
+      pretendToBeVisual: true,
+      runScripts: "dangerously",
+      beforeParse(window) {
+        Object.defineProperty(window.performance, "now", {
+          configurable: true,
+          value: () => now
+        });
+        window.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+          frames.push(callback);
+          return frames.length;
+        };
+        window.cancelAnimationFrame = () => undefined;
+        Object.defineProperty(window.HTMLElement.prototype, "clientWidth", {
+          configurable: true,
+          get() {
+            if (this.id === "track") return 240;
+            if (this.id === "walker") return 64;
+
+            return 0;
+          }
+        });
+      }
+    });
+    const document = dom.window.document;
+    const timer = document.getElementById("timer");
+    const walker = document.getElementById("walker") as HTMLElement | null;
+    const start = document.getElementById("start");
+    const pause = document.getElementById("pause");
+    const replay = document.getElementById("replay");
+
+    expect(timer?.textContent).toBe("计时：0.0 秒");
+    expect(walker?.style.transform).toBe("translateX(0px)");
+
+    start?.click();
+    now = 250;
+    frames.shift()?.(now);
+
+    expect(timer?.textContent).toBe("计时：0.3 秒");
+    expect(walker?.style.transform).toBe("translateX(48px)");
+
+    pause?.click();
+    replay?.click();
+
+    expect(timer?.textContent).toBe("计时：0.0 秒");
+    expect(walker?.style.transform).toBe("translateX(0px)");
   });
 });
