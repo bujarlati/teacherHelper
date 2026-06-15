@@ -1,6 +1,14 @@
 import { videoStatusSchema } from "../shared/schemas.js";
 import type { VideoTaskStatus } from "../shared/types.js";
 
+type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue | undefined };
+
 type FetchImpl = typeof fetch;
 
 type ClientOptions = {
@@ -25,11 +33,12 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const baseUrl = (options.baseUrl ?? "https://api.siliconflow.cn/v1").replace(/\/$/, "");
 
-  async function requestJson<T>(path: string, apiKey: string, init: RequestInit): Promise<T> {
+  async function requestJson(path: string, apiKey: string, init: RequestInit): Promise<unknown> {
     const response = await fetchImpl(`${baseUrl}${path}`, {
       ...init,
       headers: {
         "Content-Type": "application/json",
+        ...(init.headers ?? {}),
         Authorization: `Bearer ${apiKey}`
       }
     });
@@ -39,30 +48,46 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
       throw new Error(`SiliconFlow request failed: ${response.status} ${text}`);
     }
 
-    return response.json() as Promise<T>;
+    try {
+      return await response.json();
+    } catch {
+      throw new Error("SiliconFlow returned invalid JSON");
+    }
   }
 
   return {
     async chatCompletion(input: { apiKey: string; modelName: string; messages: ChatMessage[] }): Promise<string> {
-      const data = await requestJson<{ choices: Array<{ message: { content: string } }> }>(
-        "/chat/completions",
-        input.apiKey,
-        {
-          method: "POST",
-          body: JSON.stringify({ model: input.modelName, messages: input.messages })
-        }
-      );
+      const data = await requestJson("/chat/completions", input.apiKey, {
+        method: "POST",
+        body: JSON.stringify({ model: input.modelName, messages: input.messages })
+      });
+      const content = readString(data, ["choices", 0, "message", "content"]);
+      if (!content) {
+        throw new Error("SiliconFlow returned invalid chat completion response");
+      }
 
-      return data.choices[0]?.message.content ?? "";
+      return content;
     },
 
     async listModels(input: { apiKey: string; type?: "text" | "video" }): Promise<Array<{ id: string }>> {
       const query = input.type ? `?type=${encodeURIComponent(input.type)}` : "";
-      const data = await requestJson<{ data: Array<{ id: string }> }>(`/models${query}`, input.apiKey, {
+      const data = await requestJson(`/models${query}`, input.apiKey, {
         method: "GET"
       });
 
-      return data.data;
+      if (!isRecord(data) || !Array.isArray(data.data)) {
+        throw new Error("SiliconFlow returned invalid models response");
+      }
+
+      const models: Array<{ id: string }> = [];
+      for (const item of data.data) {
+        if (!isRecord(item) || typeof item.id !== "string" || item.id.length === 0) {
+          throw new Error("SiliconFlow returned invalid models response");
+        }
+        models.push({ id: item.id });
+      }
+
+      return models;
     },
 
     async submitVideo(input: {
@@ -71,7 +96,7 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
       prompt: string;
       imageSize?: string;
     }): Promise<string> {
-      const data = await requestJson<{ requestId: string }>("/video/submit", input.apiKey, {
+      const data = await requestJson("/video/submit", input.apiKey, {
         method: "POST",
         body: JSON.stringify({
           model: input.modelName,
@@ -80,29 +105,89 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
         })
       });
 
-      return data.requestId;
+      const requestId = readString(data, ["requestId"]);
+      if (!requestId) {
+        throw new Error("SiliconFlow returned invalid video submit response");
+      }
+
+      return requestId;
     },
 
     async getVideoStatus(input: { apiKey: string; requestId: string }): Promise<VideoStatusResult> {
-      const data = await requestJson<{
-        status: string;
-        reason?: string;
-        results?: { videos?: Array<{ url: string }>; seed?: number; timings?: { inference?: number } };
-      }>("/video/status", input.apiKey, {
+      const data = await requestJson("/video/status", input.apiKey, {
         method: "POST",
         body: JSON.stringify({ requestId: input.requestId })
       });
 
-      const result: VideoStatusResult = {
-        status: videoStatusSchema.parse(data.status)
-      };
+      if (!isRecord(data)) {
+        throw new Error("SiliconFlow returned invalid video status response");
+      }
 
-      if (data.reason !== undefined) result.reason = data.reason;
-      if (data.results?.videos?.[0]?.url !== undefined) result.videoUrl = data.results.videos[0].url;
-      if (data.results?.seed !== undefined) result.seed = data.results.seed;
-      if (data.results?.timings?.inference !== undefined) result.inferenceMs = data.results.timings.inference;
+      const parsedStatus = videoStatusSchema.safeParse(data.status);
+      if (!parsedStatus.success) {
+        throw new Error("SiliconFlow returned invalid video status response");
+      }
+
+      const result: VideoStatusResult = { status: parsedStatus.data };
+
+      if (data.reason !== undefined) {
+        if (typeof data.reason !== "string") throw new Error("SiliconFlow returned invalid video status response");
+        result.reason = data.reason;
+      }
+
+      const results = data.results;
+      if (results !== undefined) {
+        if (!isRecord(results)) throw new Error("SiliconFlow returned invalid video status response");
+
+        if (results.videos !== undefined) {
+          if (!Array.isArray(results.videos)) throw new Error("SiliconFlow returned invalid video status response");
+          const firstVideo = results.videos[0];
+          if (firstVideo !== undefined) {
+            const videoUrl = readString(firstVideo, ["url"]);
+            if (!videoUrl) throw new Error("SiliconFlow returned invalid video status response");
+            result.videoUrl = videoUrl;
+          }
+        }
+
+        if (results.seed !== undefined) {
+          if (typeof results.seed !== "number") throw new Error("SiliconFlow returned invalid video status response");
+          result.seed = results.seed;
+        }
+
+        const timings = results.timings;
+        if (timings !== undefined) {
+          if (!isRecord(timings)) throw new Error("SiliconFlow returned invalid video status response");
+          if (timings.inference !== undefined) {
+            if (typeof timings.inference !== "number") {
+              throw new Error("SiliconFlow returned invalid video status response");
+            }
+            result.inferenceMs = timings.inference;
+          }
+        }
+      }
 
       return result;
     }
   };
+}
+
+function isRecord(value: unknown): value is Record<string, JsonValue> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readString(value: unknown, path: Array<string | number>): string | undefined {
+  let current: unknown = value;
+
+  for (const segment of path) {
+    if (typeof segment === "number") {
+      if (!Array.isArray(current)) return undefined;
+      current = current[segment];
+      continue;
+    }
+
+    if (!isRecord(current)) return undefined;
+    current = current[segment];
+  }
+
+  return typeof current === "string" ? current : undefined;
 }

@@ -8,6 +8,15 @@ function jsonResponse(data: unknown): Response {
   } as Response;
 }
 
+function invalidJsonResponse(): Response {
+  return {
+    ok: true,
+    json: async () => {
+      throw new SyntaxError("Unexpected token");
+    }
+  } as unknown as Response;
+}
+
 function errorResponse(status: number, body: string): Response {
   return {
     ok: false,
@@ -84,6 +93,24 @@ describe("createSiliconFlowClient", () => {
     );
   });
 
+  it("throws a readable error when a successful response has invalid JSON", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(invalidJsonResponse());
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(client.chatCompletion({ apiKey: "key", modelName: "model", messages: [] })).rejects.toThrow(
+      "SiliconFlow returned invalid JSON"
+    );
+  });
+
+  it("rejects chat responses without first choice content", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ choices: [] }));
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(client.chatCompletion({ apiKey: "key", modelName: "model", messages: [] })).rejects.toThrow(
+      "SiliconFlow returned invalid chat completion response"
+    );
+  });
+
   it("adds a text type query when listing models and returns model data", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({
@@ -105,6 +132,24 @@ describe("createSiliconFlowClient", () => {
         headers: expect.objectContaining({ Authorization: "Bearer key" })
       })
     );
+  });
+
+  it("rejects model list responses without model data", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ data: "not-an-array" }));
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(client.listModels({ apiKey: "key", type: "text" })).rejects.toThrow(
+      "SiliconFlow returned invalid models response"
+    );
+  });
+
+  it("rejects video submit responses without a request id", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(
+      client.submitVideo({ apiKey: "key", modelName: "Wan-AI/Wan2.2-T2V-A14B", prompt: "math animation" })
+    ).rejects.toThrow("SiliconFlow returned invalid video submit response");
   });
 
   it("parses a valid video status and first video URL", async () => {
@@ -140,5 +185,33 @@ describe("createSiliconFlowClient", () => {
     const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
 
     await expect(client.getVideoStatus({ apiKey: "key", requestId: "req-1" })).rejects.toThrow();
+  });
+
+  it("rejects video status responses with invalid video URL", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        status: "Succeed",
+        results: { videos: [{ url: "" }] }
+      })
+    );
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(client.getVideoStatus({ apiKey: "key", requestId: "req-1" })).rejects.toThrow(
+      "SiliconFlow returned invalid video status response"
+    );
+  });
+
+  it("rejects video status responses with non-number timing data", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        status: "Succeed",
+        results: { timings: { inference: "slow" } }
+      })
+    );
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(client.getVideoStatus({ apiKey: "key", requestId: "req-1" })).rejects.toThrow(
+      "SiliconFlow returned invalid video status response"
+    );
   });
 });
