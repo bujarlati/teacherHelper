@@ -95,6 +95,7 @@ export function SettingsPage(): ReactElement {
           <label>
             <span>文本 API Key</span>
             <input
+              type="password"
               autoComplete="off"
               value={settings.textModel.apiKey}
               onChange={(event) => setSettings({
@@ -121,6 +122,7 @@ export function SettingsPage(): ReactElement {
           <label>
             <span>视频 API Key</span>
             <input
+              type="password"
               autoComplete="off"
               value={settings.videoModel.apiKey}
               onChange={(event) => setSettings({

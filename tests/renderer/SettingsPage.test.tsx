@@ -41,6 +41,8 @@ describe("SettingsPage", () => {
     expect(screen.getByDisplayValue("deepseek-ai/DeepSeek-V3")).toBeTruthy();
     expect(screen.getByDisplayValue("video-key")).toBeTruthy();
     expect(screen.getByDisplayValue("Wan-AI/Wan2.2-T2V-A14B")).toBeTruthy();
+    expect(screen.getByLabelText("文本 API Key")).toHaveProperty("type", "password");
+    expect(screen.getByLabelText("视频 API Key")).toHaveProperty("type", "password");
 
     fireEvent.change(screen.getByLabelText("文本 API Key"), {
       target: { value: "updated-text-key" }
