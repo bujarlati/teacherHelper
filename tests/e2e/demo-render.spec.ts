@@ -46,9 +46,28 @@ test.describe("startDemoServer", () => {
     const server = await startDemoServer(rootDir);
 
     try {
-      const response = await page.goto(new URL("%2e%2e/package.json", server.url).toString());
+      const slashResponse = await page.goto(`${server.url}%2e%2e%2fpackage.json`);
+      const backslashResponse = await page.goto(`${server.url}%2e%2e%5cpackage.json`);
 
-      expect([403, 404]).toContain(response?.status());
+      expect([403, 404]).toContain(slashResponse?.status());
+      expect([403, 404]).toContain(backslashResponse?.status());
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  test("blocks Windows absolute paths outside the demo root", async ({ page }) => {
+    const rootDir = await mkdtemp(join(tmpdir(), "teacherhelper-demo-"));
+    await writeFile(join(rootDir, "index.html"), "<!doctype html><html></html>", "utf8");
+    const server = await startDemoServer(rootDir);
+
+    try {
+      const encodedDriveResponse = await page.goto(`${server.url}%43%3a/Windows/win.ini`);
+      const driveResponse = await page.goto(`${server.url}C:/Windows/win.ini`);
+
+      expect([403, 404]).toContain(encodedDriveResponse?.status());
+      expect([403, 404]).toContain(driveResponse?.status());
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });
