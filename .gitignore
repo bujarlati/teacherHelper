@@ -3,6 +3,8 @@ dist/
 dist-electron/
 out/
 coverage/
+test-results/
+playwright-report/
 .env
 .superpowers/
 teacherhelper-data/
