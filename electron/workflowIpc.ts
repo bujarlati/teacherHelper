@@ -82,13 +82,14 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
     let videoError: string | undefined;
     if (settings.videoModel.apiKey.trim() && settings.videoModel.modelName.trim()) {
       try {
-        videoTask = await deps.createVideoTaskFromLesson({
+        const createdVideoTask = await deps.createVideoTaskFromLesson({
           lessonId: id,
           lesson,
           config: settings.videoModel,
           client: deps.client
         });
-        await deps.historyStore.upsertVideo(videoTask);
+        await deps.historyStore.upsertVideo(createdVideoTask);
+        videoTask = createdVideoTask;
       } catch (error) {
         videoError = getErrorMessage(error);
       }
@@ -164,12 +165,11 @@ async function generateDemo(
       createdAt
     });
 
-    if (activeDemoServer) {
-      await activeDemoServer.close();
-    }
-
     const promotedDemoServer = newDemoServer;
     newDemoServer = undefined;
+    if (activeDemoServer) {
+      await closeDemoServerQuietly(activeDemoServer);
+    }
 
     return { response: { id, plan, url }, activeDemoServer: promotedDemoServer };
   } catch (error) {
@@ -210,4 +210,12 @@ function safeFileName(value: string): string {
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error && error.message ? error.message : "视频任务提交失败。";
+}
+
+async function closeDemoServerQuietly(server: DemoServer): Promise<void> {
+  try {
+    await server.close();
+  } catch {
+    // A stale demo server failing to close must not break the newly opened demo.
+  }
 }

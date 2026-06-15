@@ -226,6 +226,42 @@ describe("registerWorkflowIpcHandlers", () => {
     expect(upsertVideo).not.toHaveBeenCalled();
   });
 
+  it("returns only a video error when saving a created video task fails", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const createdAt = "2026-06-15T01:02:03.000Z";
+    const videoTask: VideoRecord = {
+      id: "video-1",
+      lessonId: "lesson-1",
+      requestId: "request-1",
+      status: "InQueue",
+      prompt: lesson.video_prompt,
+      script: lesson.video_script,
+      createdAt,
+      updatedAt: createdAt
+    };
+
+    registerWorkflowIpcHandlers(fakeIpcMain, createBaseDeps({
+      historyStore: {
+        addLesson: vi.fn(),
+        addDemo: vi.fn(),
+        upsertVideo: vi.fn().mockRejectedValue(new Error("history write failed")),
+        listLessons: vi.fn(),
+        listDemos: vi.fn(),
+        listVideos: vi.fn()
+      },
+      createId: () => "lesson-1",
+      now: () => createdAt,
+      generateLessonPlan: vi.fn().mockResolvedValue(lesson),
+      createVideoTaskFromLesson: vi.fn().mockResolvedValue(videoTask)
+    }));
+
+    await expect(fakeIpcMain.handlers.get("lesson:generate")?.({}, " 一次函数 ")).resolves.toEqual({
+      id: "lesson-1",
+      lesson,
+      videoError: "history write failed"
+    });
+  });
+
   it("generates a demo, writes index.html, starts the server, opens the URL, and saves demo history", async () => {
     const fakeIpcMain = createFakeIpcMain();
     const addedDemos: DemoRecord[] = [];
@@ -341,6 +377,33 @@ describe("registerWorkflowIpcHandlers", () => {
 
     secondStart.resolve({ url: "http://127.0.0.1:6002/", close: secondServerClose });
     await expect(secondResult).resolves.toMatchObject({ id: "second-demo", url: "http://127.0.0.1:6002/" });
+    expect(firstServerClose).toHaveBeenCalledTimes(1);
+    expect(secondServerClose).not.toHaveBeenCalled();
+  });
+
+  it("keeps a new successful demo active when closing the previous server fails", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const firstServerClose = vi.fn().mockRejectedValue(new Error("close failed"));
+    const secondServerClose = vi.fn().mockResolvedValue(undefined);
+    const startDemoServer = vi.fn()
+      .mockResolvedValueOnce({ url: "http://127.0.0.1:7001/", close: firstServerClose })
+      .mockResolvedValueOnce({ url: "http://127.0.0.1:7002/", close: secondServerClose });
+
+    registerWorkflowIpcHandlers(fakeIpcMain, createBaseDeps({
+      createId: vi.fn()
+        .mockReturnValueOnce("first-demo")
+        .mockReturnValueOnce("second-demo"),
+      startDemoServer
+    }));
+
+    await expect(fakeIpcMain.handlers.get("demo:generate")?.({}, " 第一道题 ")).resolves.toMatchObject({
+      id: "first-demo",
+      url: "http://127.0.0.1:7001/"
+    });
+    await expect(fakeIpcMain.handlers.get("demo:generate")?.({}, " 第二道题 ")).resolves.toMatchObject({
+      id: "second-demo",
+      url: "http://127.0.0.1:7002/"
+    });
     expect(firstServerClose).toHaveBeenCalledTimes(1);
     expect(secondServerClose).not.toHaveBeenCalled();
   });
