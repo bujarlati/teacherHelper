@@ -9,16 +9,17 @@ export async function createWindow(): Promise<BrowserWindow> {
     minWidth: 980,
     minHeight: 680,
     webPreferences: {
-      preload: fileURLToPath(new URL("preload.js", import.meta.url)),
+      preload: fileURLToPath(new URL("../preload/preload.mjs", import.meta.url)),
       contextIsolation: true,
       nodeIntegration: false
     }
   });
 
-  if (process.env.VITE_DEV_SERVER_URL) {
-    await window.loadURL(process.env.VITE_DEV_SERVER_URL);
+  const devServerUrl = process.env.ELECTRON_RENDERER_URL ?? process.env.VITE_DEV_SERVER_URL;
+  if (devServerUrl) {
+    await window.loadURL(devServerUrl);
   } else {
-    await window.loadFile(fileURLToPath(new URL("../dist/index.html", import.meta.url)));
+    await window.loadFile(fileURLToPath(new URL("../../dist/index.html", import.meta.url)));
   }
 
   return window;
@@ -30,9 +31,14 @@ app.whenReady().then(async () => {
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      void createWindow();
+      void createWindow().catch((error: unknown) => {
+        console.error("Failed to create window on activate", error);
+      });
     }
   });
+}).catch((error: unknown) => {
+  console.error("Failed to start TeacherHelper", error);
+  app.quit();
 });
 
 app.on("window-all-closed", () => {

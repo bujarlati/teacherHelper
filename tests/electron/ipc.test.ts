@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { registerSettingsIpcHandlers } from "../../electron/ipc";
+import { registerSettingsIpcHandlers } from "../../electron/settingsIpc";
 import type { AppSettings } from "../../src/shared/types";
 
 type Handler = (_event: unknown, ...args: unknown[]) => unknown;
@@ -47,5 +47,28 @@ describe("registerSettingsIpcHandlers", () => {
     await expect(fakeIpcMain.handlers.get("settings:save")?.({}, settings)).resolves.toBeUndefined();
     await expect(fakeIpcMain.handlers.get("settings:clear")?.({})).resolves.toBeUndefined();
     expect(calls).toEqual(["load", "save:text-key", "clear"]);
+  });
+
+  it("rejects invalid settings without saving", async () => {
+    const calls: string[] = [];
+    const fakeIpcMain = createFakeIpcMain();
+    const fakeConfigStore = {
+      async load(): Promise<AppSettings> {
+        throw new Error("not used");
+      },
+      async save(_nextSettings: AppSettings) {
+        calls.push("save");
+      },
+      async clear() {
+        throw new Error("not used");
+      }
+    };
+
+    registerSettingsIpcHandlers(fakeIpcMain, fakeConfigStore);
+
+    await expect(
+      fakeIpcMain.handlers.get("settings:save")?.({}, { textModel: { apiKey: "text-key", modelName: "Qwen" } })
+    ).rejects.toThrow();
+    expect(calls).toEqual([]);
   });
 });
