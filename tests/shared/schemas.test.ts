@@ -1,0 +1,48 @@
+import { describe, expect, it } from "vitest";
+import { lessonPlanSchema, problemDemoPlanSchema } from "../../src/shared/schemas";
+
+describe("lessonPlanSchema", () => {
+  it("accepts a complete lesson plan", () => {
+    const parsed = lessonPlanSchema.parse({
+      title: "一元一次方程",
+      grade_suggestion: "七年级",
+      teaching_goals: ["理解方程的意义"],
+      key_points: ["列方程"],
+      difficult_points: ["找等量关系"],
+      common_confusions: ["把未知量和已知量混淆"],
+      lesson_flow: [{ title: "导入", minutes: 5, activities: ["情境提问"] }],
+      board_design: ["设未知数", "列方程", "解方程"],
+      example_questions: [{ question: "小明买笔...", answer: "x=3" }],
+      worked_solutions: [{ question: "小明买笔...", steps: ["设 x", "列式"], answer: "3 支" }],
+      classroom_questions: ["为什么两边相等？"],
+      homework_suggestions: ["完成 3 道同类题"],
+      video_script: "展示天平两边保持平衡。",
+      video_prompt: "A classroom animation showing equation balance.",
+      markdown: "# 一元一次方程"
+    });
+
+    expect(parsed.title).toBe("一元一次方程");
+  });
+});
+
+describe("problemDemoPlanSchema", () => {
+  it("accepts a high-quality equation demo plan", () => {
+    const parsed = problemDemoPlanSchema.parse({
+      kind: "equation",
+      title: "买笔问题",
+      originalProblem: "每支笔 2 元，买了 x 支共 10 元。",
+      knownValues: [{ label: "单价", value: 2, unit: "元" }],
+      target: "求购买数量",
+      steps: ["设购买 x 支", "列方程 2x=10", "解得 x=5"],
+      equation: {
+        variable: "x",
+        relationship: "总价 = 单价 × 数量",
+        expression: "2x = 10",
+        solution: "x = 5",
+        verification: "2 × 5 = 10"
+      }
+    });
+
+    expect(parsed.kind).toBe("equation");
+  });
+});
