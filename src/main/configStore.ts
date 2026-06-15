@@ -1,12 +1,14 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { appSettingsSchema } from "../shared/schemas";
-import type { AppSettings } from "../shared/types";
+import { appSettingsSchema } from "../shared/schemas.js";
+import type { AppSettings } from "../shared/types.js";
 
-const emptySettings: AppSettings = {
-  textModel: { apiKey: "", modelName: "" },
-  videoModel: { apiKey: "", modelName: "" }
-};
+function createEmptySettings(): AppSettings {
+  return {
+    textModel: { apiKey: "", modelName: "" },
+    videoModel: { apiKey: "", modelName: "" }
+  };
+}
 
 export function createConfigStore(baseDir: string) {
   const filePath = join(baseDir, "settings.json");
@@ -18,7 +20,7 @@ export function createConfigStore(baseDir: string) {
         return appSettingsSchema.parse(JSON.parse(raw));
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-          return emptySettings;
+          return createEmptySettings();
         }
 
         throw error;
