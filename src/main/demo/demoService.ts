@@ -11,6 +11,7 @@ type AnalyzeClient = {
     maxTokens?: number;
     temperature?: number;
     responseFormat?: { type: "json_object" };
+    thinkingBudget?: number;
   }): Promise<string>;
 };
 
@@ -31,7 +32,8 @@ export async function analyzeProblemForDemo(input: {
     messages: buildAnalyzeProblemPrompt(input.problem),
     maxTokens: 1800,
     temperature: 0.2,
-    responseFormat: { type: "json_object" }
+    responseFormat: { type: "json_object" },
+    thinkingBudget: 64
   });
 
   return parseProblemDemoPlan(parseProblemDemoJson(stripCodeFence(raw)));

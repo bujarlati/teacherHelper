@@ -17,6 +17,7 @@ type LessonClient = {
     maxTokens?: number;
     temperature?: number;
     responseFormat?: { type: "json_object" };
+    thinkingBudget?: number;
   }): Promise<string>;
 };
 
@@ -37,7 +38,8 @@ export async function generateLessonPlan(input: {
     messages: buildLessonPrompt(input.topic),
     maxTokens: 4096,
     temperature: 0.4,
-    responseFormat: { type: "json_object" }
+    responseFormat: { type: "json_object" },
+    thinkingBudget: 64
   });
 
   const parsedJson = parseLessonJson(stripCodeFence(raw));

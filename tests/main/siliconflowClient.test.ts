@@ -40,7 +40,8 @@ describe("createSiliconFlowClient", () => {
       messages: [{ role: "user", content: "hello" }],
       maxTokens: 4096,
       temperature: 0.4,
-      responseFormat: { type: "json_object" }
+      responseFormat: { type: "json_object" },
+      thinkingBudget: 64
     });
 
     expect(content).toBe("{\"title\":\"ok\"}");
@@ -58,7 +59,8 @@ describe("createSiliconFlowClient", () => {
           stream: false,
           max_tokens: 4096,
           temperature: 0.4,
-          response_format: { type: "json_object" }
+          response_format: { type: "json_object" },
+          thinking_budget: 64
         })
       })
     );

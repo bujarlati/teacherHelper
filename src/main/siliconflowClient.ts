@@ -33,6 +33,7 @@ type ChatCompletionInput = {
   maxTokens?: number;
   temperature?: number;
   responseFormat?: ResponseFormat;
+  thinkingBudget?: number;
 };
 
 type VideoStatusResult = {
@@ -94,7 +95,8 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
         stream: false,
         max_tokens: input.maxTokens,
         temperature: input.temperature,
-        response_format: input.responseFormat
+        response_format: input.responseFormat,
+        thinking_budget: input.thinkingBudget
       };
 
       const data = await requestJson("/chat/completions", input.apiKey, {

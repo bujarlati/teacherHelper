@@ -69,7 +69,8 @@ describe("generateLessonPlan", () => {
       messages: buildLessonPrompt("一元一次方程"),
       maxTokens: 4096,
       temperature: 0.4,
-      responseFormat: { type: "json_object" }
+      responseFormat: { type: "json_object" },
+      thinkingBudget: 64
     });
   });
 
