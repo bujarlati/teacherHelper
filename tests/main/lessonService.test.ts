@@ -106,6 +106,32 @@ describe("generateLessonPlan", () => {
     });
   });
 
+  it("normalizes string list fields that the model returns as text blocks", async () => {
+    const { markdown: _markdown, ...baseLesson } = completeLessonPlan();
+    const modelLesson = {
+      ...baseLesson,
+      lesson_flow: baseLesson.lesson_flow.map((item) => ({
+        ...item,
+        activities: item.activities.join("；")
+      })),
+      board_design: "设未知数\n列方程\n解方程\n检验"
+    };
+    const fakeClient = {
+      chatCompletion: vi.fn(async () => JSON.stringify(modelLesson))
+    };
+
+    await expect(
+      generateLessonPlan({
+        topic: "一元一次方程",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({
+      board_design: ["设未知数", "列方程", "解方程", "检验"],
+      markdown: expect.stringContaining("- 情境导入（5 分钟）：用天平情境引出等式平衡")
+    });
+  });
+
   it("throws a clear Chinese error when text model config is missing", async () => {
     const fakeClient = {
       chatCompletion: vi.fn(async () => JSON.stringify(completeLessonPlan()))

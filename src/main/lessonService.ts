@@ -1,11 +1,34 @@
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 import { lessonPlanSchema } from "../shared/schemas.js";
 import type { LessonPlan, ModelConfig } from "../shared/types.js";
 import { buildLessonPrompt } from "./lessonPrompt.js";
 
 type ModelLessonPlan = Omit<LessonPlan, "markdown"> & { markdown?: string };
 
+const modelStringListSchema = z.preprocess(normalizeStringList, z.array(z.string().min(1)));
+
 const modelLessonPlanSchema = lessonPlanSchema.extend({
+  teaching_goals: modelStringListSchema,
+  key_points: modelStringListSchema,
+  difficult_points: modelStringListSchema,
+  common_confusions: modelStringListSchema,
+  lesson_flow: z.array(
+    z.object({
+      title: z.string().min(1),
+      minutes: z.number().nonnegative(),
+      activities: modelStringListSchema
+    })
+  ),
+  board_design: modelStringListSchema,
+  worked_solutions: z.array(
+    z.object({
+      question: z.string().min(1),
+      steps: modelStringListSchema,
+      answer: z.string().min(1)
+    })
+  ),
+  classroom_questions: modelStringListSchema,
+  homework_suggestions: modelStringListSchema,
   markdown: lessonPlanSchema.shape.markdown.optional()
 });
 
@@ -125,6 +148,35 @@ function parseLessonPlan(value: unknown): ModelLessonPlan {
 
     throw error;
   }
+}
+
+function normalizeStringList(value: unknown): unknown {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+
+    if (!trimmed) {
+      return value;
+    }
+
+    const items = trimmed
+      .split(/\r?\n|[；;]/)
+      .map(cleanListItem)
+      .filter(Boolean);
+
+    return items.length > 0 ? items : [trimmed];
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === "string" ? cleanListItem(item) : item))
+      .filter((item) => typeof item !== "string" || item.length > 0);
+  }
+
+  return value;
+}
+
+function cleanListItem(value: string): string {
+  return value.replace(/^\s*(?:[-*•]\s*)?(?:(?:\d+[.、)]|\(\d+\)|（\d+）)\s*)?/, "").trim();
 }
 
 function formatZodIssues(error: ZodError): string {
