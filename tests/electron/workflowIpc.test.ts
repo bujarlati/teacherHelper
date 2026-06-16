@@ -73,6 +73,7 @@ function createBaseDeps(overrides: Record<string, unknown> = {}) {
     now: () => "2026-06-15T03:04:05.000Z",
     generateLessonPlan: vi.fn(),
     createVideoTaskFromLesson: vi.fn(),
+    createStandaloneVideoTask: vi.fn(),
     refreshVideoTaskStatus: vi.fn(),
     analyzeProblemForDemo: vi.fn().mockResolvedValue(demoPlan),
     chooseDemoRenderer: vi.fn().mockReturnValue("equation"),
@@ -226,6 +227,54 @@ describe("registerWorkflowIpcHandlers", () => {
       createdAt: "2026-06-15T01:02:03.000Z"
     }]);
     expect(upsertVideo).not.toHaveBeenCalled();
+  });
+
+  it("generates a standalone video task and saves it to history", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const upsertVideo = vi.fn().mockResolvedValue(undefined);
+    const videoTask: VideoRecord = {
+      id: "video-standalone-1",
+      requestId: "request-video-1",
+      status: "InQueue",
+      prompt: "A number line animation.\n镜头脚本：Show A then B.",
+      script: "Show A then B.",
+      imageSize: "960x960",
+      negativePrompt: "blurry",
+      createdAt: "2026-06-15T03:04:05.000Z",
+      updatedAt: "2026-06-15T03:04:05.000Z"
+    };
+    const createStandaloneVideoTask = vi.fn().mockResolvedValue(videoTask);
+    const deps = createBaseDeps({
+      historyStore: {
+        addLesson: vi.fn(),
+        addDemo: vi.fn(),
+        upsertVideo,
+        listLessons: vi.fn(),
+        listDemos: vi.fn(),
+        listVideos: vi.fn()
+      },
+      createStandaloneVideoTask
+    });
+
+    registerWorkflowIpcHandlers(fakeIpcMain, deps);
+
+    await expect(fakeIpcMain.handlers.get("video:generate")?.({}, {
+      prompt: " A number line animation. ",
+      script: " Show A then B. ",
+      imageDataUrl: "data:image/png;base64,AAA",
+      imageSize: "960x960",
+      negativePrompt: " blurry "
+    })).resolves.toEqual(videoTask);
+    expect(createStandaloneVideoTask).toHaveBeenCalledWith({
+      config: completeSettings.videoModel,
+      client: deps.client,
+      prompt: "A number line animation.",
+      script: "Show A then B.",
+      image: "data:image/png;base64,AAA",
+      imageSize: "960x960",
+      negativePrompt: "blurry"
+    });
+    expect(upsertVideo).toHaveBeenCalledWith(videoTask);
   });
 
   it("returns only a video error when saving a created video task fails", async () => {

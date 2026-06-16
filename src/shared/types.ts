@@ -55,12 +55,24 @@ export type ProblemDemoPlan = {
 
 export type VideoTaskStatus = "Succeed" | "InQueue" | "InProgress" | "Failed";
 
+export type VideoImageSize = "1280x720" | "720x1280" | "960x960";
+
+export type VideoGenerateInput = {
+  prompt: string;
+  script: string;
+  imageDataUrl?: string;
+  imageSize: VideoImageSize;
+  negativePrompt?: string;
+};
+
 export type VideoTask = {
   id: string;
   requestId: string;
   status: VideoTaskStatus;
   prompt: string;
   script: string;
+  imageSize?: string;
+  negativePrompt?: string;
   videoUrl?: string;
   reason?: string;
   createdAt: string;

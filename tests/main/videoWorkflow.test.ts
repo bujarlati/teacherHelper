@@ -1,10 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
-import { createVideoTaskFromLesson, refreshVideoTaskStatus } from "../../src/main/videoWorkflow";
+import {
+  buildVideoGenerationPrompt,
+  createStandaloneVideoTask,
+  createVideoTaskFromLesson,
+  refreshVideoTaskStatus
+} from "../../src/main/videoWorkflow";
 import type { ModelConfig, LessonPlan, VideoTaskStatus } from "../../src/shared/types";
 import type { VideoRecord } from "../../src/main/historyStore";
 
 type SubmitClient = {
-  submitVideo: (input: { apiKey: string; modelName: string; prompt: string }) => Promise<string>;
+  submitVideo: (input: {
+    apiKey: string;
+    modelName: string;
+    prompt: string;
+    image?: string;
+    imageSize?: string;
+    negativePrompt?: string;
+  }) => Promise<string>;
 };
 
 type StatusClient = {
@@ -42,7 +54,7 @@ function createLesson(overrides: Partial<LessonPlan> = {}): LessonPlan {
 }
 
 describe("createVideoTaskFromLesson", () => {
-  it("submits a video task using the lesson video prompt and script", async () => {
+  it("submits a video task using a richer lesson video prompt and script", async () => {
     const client: SubmitClient = {
       submitVideo: vi.fn().mockResolvedValue("request-lesson-1")
     };
@@ -62,13 +74,13 @@ describe("createVideoTaskFromLesson", () => {
     expect(client.submitVideo).toHaveBeenCalledWith({
       apiKey: "video-key",
       modelName: "Wan-AI/Wan2.2-T2V-A14B",
-      prompt: "A classroom animation showing equation balance with a scale."
+      prompt: expect.stringContaining("镜头脚本：画面展示天平左右两边同时增加砝码，保持平衡。")
     });
     expect(record).toMatchObject({
       lessonId: "lesson-1",
       requestId: "request-lesson-1",
       status: "InQueue",
-      prompt: "A classroom animation showing equation balance with a scale.",
+      prompt: expect.stringContaining("A classroom animation showing equation balance with a scale."),
       script: "画面展示天平左右两边同时增加砝码，保持平衡。"
     });
     expect(record.id).toEqual(expect.any(String));
@@ -108,6 +120,55 @@ describe("createVideoTaskFromLesson", () => {
     });
 
     expect(lesson).toEqual(lessonBefore);
+  });
+});
+
+describe("createStandaloneVideoTask", () => {
+  it("submits and returns a standalone image-to-video record", async () => {
+    const client: SubmitClient = {
+      submitVideo: vi.fn().mockResolvedValue("request-video-1")
+    };
+
+    const record = await createStandaloneVideoTask({
+      config: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-I2V-A14B" },
+      client,
+      prompt: "A number line animation explaining addition.",
+      script: "Show one jump of A and another jump of B, then highlight A+B.",
+      image: "data:image/png;base64,AAA",
+      imageSize: "1280x720",
+      negativePrompt: "low quality"
+    });
+
+    expect(client.submitVideo).toHaveBeenCalledWith({
+      apiKey: "video-key",
+      modelName: "Wan-AI/Wan2.2-I2V-A14B",
+      prompt: expect.stringContaining("A number line animation explaining addition."),
+      image: "data:image/png;base64,AAA",
+      imageSize: "1280x720",
+      negativePrompt: "low quality"
+    });
+    expect(record).toMatchObject({
+      requestId: "request-video-1",
+      status: "InQueue",
+      prompt: expect.stringContaining("A number line animation explaining addition."),
+      script: "Show one jump of A and another jump of B, then highlight A+B.",
+      imageSize: "1280x720",
+      negativePrompt: "low quality"
+    });
+    expect(record.lessonId).toBeUndefined();
+  });
+});
+
+describe("buildVideoGenerationPrompt", () => {
+  it("combines the base prompt and script into a director-style prompt", () => {
+    const prompt = buildVideoGenerationPrompt({
+      prompt: "A clean classroom animation about equation balance.",
+      script: "First show the full equation, then remove equal weights from both sides."
+    });
+
+    expect(prompt).toContain("A clean classroom animation about equation balance.");
+    expect(prompt).toContain("镜头脚本：First show the full equation");
+    expect(prompt).toContain("按时间顺序");
   });
 });
 

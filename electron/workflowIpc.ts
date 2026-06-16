@@ -38,6 +38,15 @@ type WorkflowDeps = {
     config: AppSettings["videoModel"];
     client: unknown;
   }): Promise<VideoRecord>;
+  createStandaloneVideoTask?(input: {
+    config: AppSettings["videoModel"];
+    client: unknown;
+    prompt: string;
+    script: string;
+    image?: string;
+    imageSize?: string;
+    negativePrompt?: string;
+  }): Promise<VideoRecord>;
   refreshVideoTaskStatus(input: {
     task: VideoRecord;
     config: AppSettings["videoModel"];
@@ -59,6 +68,15 @@ type WorkflowDeps = {
 };
 
 const nonEmptyStringSchema = z.string().trim().min(1);
+const optionalTrimmedStringSchema = z.string().trim().optional().transform((value) => value || undefined);
+const videoImageSizeSchema = z.enum(["1280x720", "720x1280", "960x960"]);
+const generateVideoInputSchema = z.object({
+  prompt: nonEmptyStringSchema,
+  script: z.string().trim().optional().default(""),
+  imageDataUrl: optionalTrimmedStringSchema,
+  imageSize: videoImageSizeSchema.default("1280x720"),
+  negativePrompt: optionalTrimmedStringSchema
+});
 const exportLessonInputSchema = z.object({
   id: z.string().trim().min(1),
   title: z.string().trim().min(1),
@@ -130,6 +148,27 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
     activeDemoServer = result.activeDemoServer;
 
     return result.response;
+  });
+
+  ipcMainLike.handle("video:generate", async (_event, input) => {
+    if (!deps.createStandaloneVideoTask) {
+      throw new Error("视频生成服务未初始化。");
+    }
+
+    const parsed = generateVideoInputSchema.parse(input);
+    const settings = await deps.configStore.load();
+    const videoTask = await deps.createStandaloneVideoTask({
+      config: settings.videoModel,
+      client: deps.client,
+      prompt: parsed.prompt,
+      script: parsed.script,
+      image: parsed.imageDataUrl,
+      imageSize: parsed.imageSize,
+      negativePrompt: parsed.negativePrompt
+    });
+    await deps.historyStore.upsertVideo(videoTask);
+
+    return videoTask;
   });
 
   ipcMainLike.handle("video:refresh", async (_event, videoIdInput) => {

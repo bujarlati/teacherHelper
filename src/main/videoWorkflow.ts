@@ -3,7 +3,14 @@ import { submitVideoTask } from "./videoService.js";
 import type { LessonPlan, ModelConfig, VideoTaskStatus } from "../shared/types.js";
 
 type VideoWorkflowClient = {
-  submitVideo(input: { apiKey: string; modelName: string; prompt: string }): Promise<string>;
+  submitVideo(input: {
+    apiKey: string;
+    modelName: string;
+    prompt: string;
+    image?: string;
+    imageSize?: string;
+    negativePrompt?: string;
+  }): Promise<string>;
 };
 
 type VideoStatusClient = {
@@ -19,6 +26,16 @@ type CreateVideoTaskFromLessonInput = {
   lesson: LessonPlan;
   config: ModelConfig;
   client: VideoWorkflowClient;
+};
+
+type CreateStandaloneVideoTaskInput = {
+  config: ModelConfig;
+  client: VideoWorkflowClient;
+  prompt: string;
+  script: string;
+  image?: string;
+  imageSize?: string;
+  negativePrompt?: string;
 };
 
 type RefreshVideoTaskStatusInput = {
@@ -41,7 +58,10 @@ export async function createVideoTaskFromLesson({
   const task = await submitVideoTask({
     client,
     config,
-    prompt: lesson.video_prompt,
+    prompt: buildVideoGenerationPrompt({
+      prompt: lesson.video_prompt,
+      script: lesson.video_script
+    }),
     script: lesson.video_script
   });
 
@@ -49,6 +69,41 @@ export async function createVideoTaskFromLesson({
     ...task,
     lessonId
   };
+}
+
+export async function createStandaloneVideoTask({
+  config,
+  client,
+  prompt,
+  script,
+  image,
+  imageSize,
+  negativePrompt
+}: CreateStandaloneVideoTaskInput): Promise<VideoRecord> {
+  return submitVideoTask({
+    client,
+    config,
+    prompt: buildVideoGenerationPrompt({ prompt, script }),
+    script,
+    image,
+    imageSize,
+    negativePrompt
+  });
+}
+
+export function buildVideoGenerationPrompt(input: { prompt: string; script?: string }): string {
+  const prompt = input.prompt.trim();
+  const script = input.script?.trim();
+
+  if (!script) {
+    return prompt;
+  }
+
+  return [
+    prompt,
+    `镜头脚本：${script}`,
+    "要求：按时间顺序呈现，画面用于课堂讲解，动作和镜头变化清晰连贯，文字标注简洁可读，整体像一段完整的教学演示视频。"
+  ].join("\n");
 }
 
 export async function refreshVideoTaskStatus({

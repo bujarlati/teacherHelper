@@ -137,13 +137,17 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
       modelName: string;
       prompt: string;
       imageSize?: string;
+      image?: string;
+      negativePrompt?: string;
     }): Promise<string> {
       const data = await requestJson("/video/submit", input.apiKey, {
         method: "POST",
         body: JSON.stringify({
           model: input.modelName,
           prompt: input.prompt,
-          image_size: input.imageSize ?? "1280x720"
+          image_size: input.imageSize ?? "1280x720",
+          image: input.image,
+          negative_prompt: input.negativePrompt
         })
       });
 

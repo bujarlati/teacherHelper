@@ -93,6 +93,36 @@ describe("createSiliconFlowClient", () => {
     );
   });
 
+  it("submits image-to-video options when provided", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ requestId: "req-image-1" }));
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(
+      client.submitVideo({
+        apiKey: "key",
+        modelName: "Wan-AI/Wan2.2-I2V-A14B",
+        prompt: "animate this textbook diagram",
+        imageSize: "960x960",
+        image: "data:image/png;base64,AAA",
+        negativePrompt: "blurry"
+      })
+    ).resolves.toBe("req-image-1");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.siliconflow.cn/v1/video/submit",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          model: "Wan-AI/Wan2.2-I2V-A14B",
+          prompt: "animate this textbook diagram",
+          image_size: "960x960",
+          image: "data:image/png;base64,AAA",
+          negative_prompt: "blurry"
+        })
+      })
+    );
+  });
+
   it("throws a readable error on non-2xx responses", async () => {
     const fetchMock = vi.fn().mockResolvedValue(errorResponse(401, "unauthorized"));
     const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });

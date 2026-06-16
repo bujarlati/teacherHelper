@@ -2,7 +2,14 @@ import { randomUUID } from "node:crypto";
 import type { ModelConfig, VideoTask, VideoTaskStatus } from "../shared/types.js";
 
 type VideoSubmitClient = {
-  submitVideo(input: { apiKey: string; modelName: string; prompt: string }): Promise<string>;
+  submitVideo(input: {
+    apiKey: string;
+    modelName: string;
+    prompt: string;
+    image?: string;
+    imageSize?: string;
+    negativePrompt?: string;
+  }): Promise<string>;
 };
 
 type VideoStatusClient = {
@@ -20,6 +27,9 @@ type SubmitVideoTaskInput = {
   config: ModelConfig;
   prompt: string;
   script: string;
+  image?: string;
+  imageSize?: string;
+  negativePrompt?: string;
 };
 
 type PollVideoUntilDoneInput = {
@@ -45,11 +55,17 @@ export async function submitVideoTask(input: SubmitVideoTaskInput): Promise<Vide
     throw new Error(missingVideoConfigMessage);
   }
 
-  const requestId = await input.client.submitVideo({
+  const submitInput: Parameters<VideoSubmitClient["submitVideo"]>[0] = {
     apiKey: input.config.apiKey,
     modelName: input.config.modelName,
     prompt: input.prompt
-  });
+  };
+
+  if (input.image) submitInput.image = input.image;
+  if (input.imageSize) submitInput.imageSize = input.imageSize;
+  if (input.negativePrompt) submitInput.negativePrompt = input.negativePrompt;
+
+  const requestId = await input.client.submitVideo(submitInput);
   const now = new Date().toISOString();
 
   return {
@@ -58,6 +74,8 @@ export async function submitVideoTask(input: SubmitVideoTaskInput): Promise<Vide
     status: "InQueue",
     prompt: input.prompt,
     script: input.script,
+    imageSize: input.imageSize,
+    negativePrompt: input.negativePrompt,
     createdAt: now,
     updatedAt: now
   };

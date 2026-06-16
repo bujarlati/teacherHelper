@@ -4,8 +4,9 @@ import { DemoPage } from "./pages/DemoPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { LessonPage } from "./pages/LessonPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { VideoPage } from "./pages/VideoPage";
 
-type PageKey = "lesson" | "demo" | "history" | "settings";
+type PageKey = "lesson" | "demo" | "video" | "history" | "settings";
 
 type NavItem = {
   key: PageKey;
@@ -15,6 +16,7 @@ type NavItem = {
 const navItems: NavItem[] = [
   { key: "lesson", label: "今日备课" },
   { key: "demo", label: "题目演示" },
+  { key: "video", label: "视频生成" },
   { key: "history", label: "历史记录" },
   { key: "settings", label: "设置" }
 ];
@@ -47,6 +49,7 @@ export function App(): ReactElement {
       <main className="content-area">
         {activePage === "lesson" ? <LessonPage /> : null}
         {activePage === "demo" ? <DemoPage /> : null}
+        {activePage === "video" ? <VideoPage /> : null}
         {activePage === "history" ? <HistoryPage /> : null}
         {activePage === "settings" ? <SettingsPage /> : null}
       </main>

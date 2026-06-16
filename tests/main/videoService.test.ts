@@ -3,7 +3,14 @@ import { pollVideoUntilDone, submitVideoTask } from "../../src/main/videoService
 import type { ModelConfig, VideoTaskStatus } from "../../src/shared/types";
 
 type SubmitClient = {
-  submitVideo: (input: { apiKey: string; modelName: string; prompt: string }) => Promise<string>;
+  submitVideo: (input: {
+    apiKey: string;
+    modelName: string;
+    prompt: string;
+    image?: string;
+    imageSize?: string;
+    negativePrompt?: string;
+  }) => Promise<string>;
 };
 
 type StatusClient = {
@@ -45,6 +52,38 @@ describe("submitVideoTask", () => {
     expect(task.id).not.toHaveLength(0);
     expect(Date.parse(task.createdAt)).not.toBeNaN();
     expect(Date.parse(task.updatedAt)).not.toBeNaN();
+  });
+
+  it("passes image-to-video options through to the client", async () => {
+    const client: SubmitClient = {
+      submitVideo: vi.fn().mockResolvedValue("request-image-1")
+    };
+
+    const task = await submitVideoTask({
+      client,
+      config: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-I2V-A14B" },
+      prompt: "A geometric diagram comes alive with labels and arrows.",
+      script: "Start from the textbook image, then animate the key line segment.",
+      image: "data:image/png;base64,AAA",
+      imageSize: "960x960",
+      negativePrompt: "blurry, distorted text"
+    });
+
+    expect(client.submitVideo).toHaveBeenCalledWith({
+      apiKey: "video-key",
+      modelName: "Wan-AI/Wan2.2-I2V-A14B",
+      prompt: "A geometric diagram comes alive with labels and arrows.",
+      image: "data:image/png;base64,AAA",
+      imageSize: "960x960",
+      negativePrompt: "blurry, distorted text"
+    });
+    expect(task).toMatchObject({
+      requestId: "request-image-1",
+      prompt: "A geometric diagram comes alive with labels and arrows.",
+      script: "Start from the textbook image, then animate the key line segment.",
+      imageSize: "960x960",
+      negativePrompt: "blurry, distorted text"
+    });
   });
 
   it("throws a clear Chinese error before calling the client when video model config is missing", async () => {

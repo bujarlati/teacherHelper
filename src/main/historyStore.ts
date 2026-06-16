@@ -22,11 +22,13 @@ export type DemoRecord = {
 
 export type VideoRecord = {
   id: string;
-  lessonId: string;
+  lessonId?: string;
   requestId: string;
   status: VideoTaskStatus;
   prompt: string;
   script: string;
+  imageSize?: string;
+  negativePrompt?: string;
   videoUrl?: string;
   reason?: string;
   createdAt: string;

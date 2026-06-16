@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { AppSettings, LessonPlan, ProblemDemoPlan, VideoTask } from "../src/shared/types.js";
+import type { AppSettings, LessonPlan, ProblemDemoPlan, VideoGenerateInput, VideoTask } from "../src/shared/types.js";
 import type { DemoRecord, LessonRecord, VideoRecord } from "../src/main/historyStore.js";
 
 export type TeacherHelperApi = {
@@ -8,6 +8,7 @@ export type TeacherHelperApi = {
   clearSettings(): Promise<void>;
   generateLesson(topic: string): Promise<{ id: string; lesson: LessonPlan; videoTask?: VideoTask; videoError?: string }>;
   exportLessonDocx(input: { id: string; title: string; lesson: LessonPlan }): Promise<string>;
+  generateVideo(input: VideoGenerateInput): Promise<VideoRecord>;
   generateDemo(problem: string): Promise<{ id: string; plan: ProblemDemoPlan; url: string }>;
   refreshVideo(videoId: string): Promise<VideoRecord>;
   listHistory(): Promise<{ lessons: LessonRecord[]; demos: DemoRecord[]; videos: VideoRecord[] }>;
@@ -24,6 +25,7 @@ const teacherHelperApi: TeacherHelperApi = {
     videoError?: string;
   }>,
   exportLessonDocx: (input) => ipcRenderer.invoke("lesson:exportDocx", input) as Promise<string>,
+  generateVideo: (input) => ipcRenderer.invoke("video:generate", input) as Promise<VideoRecord>,
   generateDemo: (problem) => ipcRenderer.invoke("demo:generate", problem) as Promise<{
     id: string;
     plan: ProblemDemoPlan;

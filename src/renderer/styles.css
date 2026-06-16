@@ -19,6 +19,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -180,6 +181,7 @@ label span {
 }
 
 input,
+select,
 textarea {
   width: 100%;
   border: 1px solid #c8d1cc;
@@ -193,6 +195,11 @@ input {
   padding: 0 12px;
 }
 
+select {
+  min-height: 42px;
+  padding: 0 10px;
+}
+
 textarea {
   min-height: 120px;
   padding: 12px;
@@ -201,6 +208,7 @@ textarea {
 }
 
 input:focus,
+select:focus,
 textarea:focus {
   border-color: #40746a;
   outline: 3px solid #cfe0da;
@@ -225,6 +233,11 @@ textarea:focus {
   display: grid;
   gap: 16px;
   margin-bottom: 22px;
+}
+
+.compact-fieldset {
+  grid-template-columns: minmax(0, 1fr) 180px;
+  padding: 16px;
 }
 
 .path-output,

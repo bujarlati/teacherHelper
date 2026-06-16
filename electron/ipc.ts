@@ -11,7 +11,7 @@ import { createHistoryStore } from "../src/main/historyStore.js";
 import { generateLessonPlan } from "../src/main/lessonService.js";
 import { getAppDataDir } from "../src/main/paths.js";
 import { createSiliconFlowClient } from "../src/main/siliconflowClient.js";
-import { createVideoTaskFromLesson, refreshVideoTaskStatus } from "../src/main/videoWorkflow.js";
+import { createStandaloneVideoTask, createVideoTaskFromLesson, refreshVideoTaskStatus } from "../src/main/videoWorkflow.js";
 import { registerSettingsIpcHandlers } from "./settingsIpc.js";
 import { registerWorkflowIpcHandlers } from "./workflowIpc.js";
 
@@ -31,6 +31,7 @@ export function registerIpcHandlers(): void {
     now: () => new Date().toISOString(),
     generateLessonPlan,
     createVideoTaskFromLesson,
+    createStandaloneVideoTask,
     refreshVideoTaskStatus,
     analyzeProblemForDemo,
     chooseDemoRenderer,

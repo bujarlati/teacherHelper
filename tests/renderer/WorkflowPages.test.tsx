@@ -53,6 +53,7 @@ describe("workflow pages", () => {
         clearSettings: vi.fn(),
         generateLesson: vi.fn().mockResolvedValue({ id: "lesson-1", lesson, videoTask }),
         exportLessonDocx: vi.fn().mockResolvedValue("D:\\teacherHelper-data\\exports\\一次函数复习.docx"),
+        generateVideo: vi.fn(),
         generateDemo: vi.fn().mockResolvedValue({ id: "demo-1", plan: demoPlan, url: "http://127.0.0.1:4321/" }),
         refreshVideo: vi.fn(),
         listHistory: vi.fn()
@@ -175,6 +176,71 @@ describe("workflow pages", () => {
     expect(screen.getByText("simple")).toBeTruthy();
     expect(screen.getByText("http://127.0.0.1:4321/")).toBeTruthy();
     expect(screen.getByText("演示已生成并打开。")).toBeTruthy();
+  });
+
+  test("App exposes the standalone video generation page", async () => {
+    const { App } = await import("../../src/renderer/App");
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "视频生成" }));
+
+    expect(screen.getByRole("heading", { name: "视频生成" })).toBeTruthy();
+    expect(screen.getByLabelText("提示词")).toBeTruthy();
+  });
+
+  test("VideoPage submits an image-to-video task and refreshes its status", async () => {
+    const queuedVideo: VideoRecord = {
+      id: "video-standalone-1",
+      requestId: "request-video-1",
+      status: "InQueue",
+      prompt: "A number line animation.",
+      script: "Show A then B.",
+      imageSize: "960x960",
+      negativePrompt: "blurry",
+      createdAt: "2026-06-15T03:04:05.000Z",
+      updatedAt: "2026-06-15T03:04:05.000Z"
+    };
+    const finishedVideo: VideoRecord = {
+      ...queuedVideo,
+      status: "Succeed",
+      videoUrl: "https://cdn.example.test/video.mp4",
+      updatedAt: "2026-06-15T04:05:06.000Z"
+    };
+    window.teacherHelper.generateVideo = vi.fn().mockResolvedValue(queuedVideo);
+    window.teacherHelper.refreshVideo = vi.fn().mockResolvedValue(finishedVideo);
+    const { VideoPage } = await import("../../src/renderer/pages/VideoPage");
+
+    render(<VideoPage />);
+
+    fireEvent.change(screen.getByLabelText("提示词"), { target: { value: "A number line animation." } });
+    fireEvent.change(screen.getByLabelText("脚本/分镜"), { target: { value: "Show A then B." } });
+    fireEvent.change(screen.getByLabelText("尺寸"), { target: { value: "960x960" } });
+    fireEvent.change(screen.getByLabelText("负面提示词"), { target: { value: "blurry" } });
+    fireEvent.change(screen.getByLabelText("参考图片"), {
+      target: { files: [new File(["image-bytes"], "diagram.png", { type: "image/png" })] }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "生成视频" }));
+
+    await waitFor(() => {
+      expect(window.teacherHelper.generateVideo).toHaveBeenCalledWith({
+        prompt: "A number line animation.",
+        script: "Show A then B.",
+        imageSize: "960x960",
+        negativePrompt: "blurry",
+        imageDataUrl: expect.stringMatching(/^data:image\/png;base64,/)
+      });
+    });
+    expect(await screen.findByText("视频任务已提交：InQueue")).toBeTruthy();
+    expect(screen.getByText("请求：request-video-1")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "刷新状态" }));
+
+    await waitFor(() => {
+      expect(window.teacherHelper.refreshVideo).toHaveBeenCalledWith("video-standalone-1");
+    });
+    expect(await screen.findByText("状态：Succeed")).toBeTruthy();
+    expect(screen.getByText("https://cdn.example.test/video.mp4")).toBeTruthy();
   });
 
   test("HistoryPage lists lesson, demo, and video records", async () => {
