@@ -14,6 +14,7 @@ function createEmptySettings(): AppSettings {
     videoModel: { apiKey: "", modelName: "" },
     embeddingModel: { apiKey: "", modelName: defaultEmbeddingModelName },
     qdrant: {
+      mode: "local",
       url: defaultQdrantUrl,
       apiKey: "",
       collectionPrefix: defaultQdrantCollectionPrefix

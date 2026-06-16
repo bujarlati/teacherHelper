@@ -3,6 +3,7 @@ import type {
   AppSettings,
   KnowledgeConnectionTestResult,
   LessonPlan,
+  LocalQdrantStatus,
   ProblemDemoPlan,
   VideoGenerateInput,
   VideoTask
@@ -32,6 +33,7 @@ export type TeacherHelperRendererApi = {
   saveSettings(settings: AppSettings): Promise<void>;
   clearSettings(): Promise<void>;
   testKnowledgeConnections(): Promise<KnowledgeConnectionTestResult>;
+  getQdrantStatus(): Promise<LocalQdrantStatus>;
   generateLesson(topic: string): Promise<LessonGenerateResult>;
   exportLessonDocx(input: { id: string; title: string; lesson: LessonPlan }): Promise<string>;
   generateVideo(input: VideoGenerateInput): Promise<VideoRecord>;
@@ -59,6 +61,7 @@ export const api: TeacherHelperRendererApi = {
   saveSettings: async (settings) => getApi().saveSettings(settings),
   clearSettings: async () => getApi().clearSettings(),
   testKnowledgeConnections: async () => getApi().testKnowledgeConnections(),
+  getQdrantStatus: async () => getApi().getQdrantStatus(),
   generateLesson: async (topic) => getApi().generateLesson(topic),
   exportLessonDocx: async (input) => getApi().exportLessonDocx(input),
   generateVideo: async (input) => getApi().generateVideo(input),

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerWorkflowIpcHandlers } from "../../electron/workflowIpc";
-import type { AppSettings, LessonPlan, ProblemDemoPlan } from "../../src/shared/types";
+import type { AppSettings, LessonPlan, LocalQdrantStatus, ProblemDemoPlan } from "../../src/shared/types";
 import type { DemoRecord, LessonRecord, VideoRecord } from "../../src/main/historyStore";
 
 type Handler = (_event: unknown, ...args: unknown[]) => unknown;
@@ -91,7 +91,7 @@ const completeSettings: AppSettings = {
   textModel: { apiKey: "text-key", modelName: "text-model" },
   videoModel: { apiKey: "video-key", modelName: "video-model" },
   embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
-  qdrant: { url: "http://localhost:6333", apiKey: "qdrant-key", collectionPrefix: "teacherhelper" }
+  qdrant: { mode: "local", url: "http://127.0.0.1:6333", apiKey: "", collectionPrefix: "teacherhelper" }
 };
 
 const lesson: LessonPlan = {
@@ -641,9 +641,20 @@ describe("registerWorkflowIpcHandlers", () => {
   it("tests knowledge connections using current settings", async () => {
     const fakeIpcMain = createFakeIpcMain();
     const qdrantClient = {};
+    const localQdrantStatus: LocalQdrantStatus = {
+      mode: "local",
+      status: "running",
+      url: "http://127.0.0.1:6333",
+      managed: true
+    };
+    const localQdrantManager = {
+      ensureRunning: vi.fn().mockResolvedValue(localQdrantStatus),
+      getStatus: vi.fn().mockReturnValue(localQdrantStatus)
+    };
     const testKnowledgeConnections = vi.fn().mockResolvedValue({ embedding: "ok", qdrant: "ok" });
     const deps = createBaseDeps({
       qdrantClient,
+      localQdrantManager,
       testKnowledgeConnections
     });
 
@@ -653,11 +664,31 @@ describe("registerWorkflowIpcHandlers", () => {
       embedding: "ok",
       qdrant: "ok"
     });
+    expect(localQdrantManager.ensureRunning).toHaveBeenCalledWith(completeSettings);
     expect(testKnowledgeConnections).toHaveBeenCalledWith({
       settings: completeSettings,
       embeddingClient: deps.client,
       qdrantClient
     });
+  });
+
+  it("returns the current local qdrant status", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const localQdrantStatus: LocalQdrantStatus = {
+      mode: "local",
+      status: "missing",
+      url: "http://127.0.0.1:6333",
+      message: "未找到内置 Qdrant"
+    };
+
+    registerWorkflowIpcHandlers(fakeIpcMain, createBaseDeps({
+      localQdrantManager: {
+        ensureRunning: vi.fn(),
+        getStatus: vi.fn().mockReturnValue(localQdrantStatus)
+      }
+    }));
+
+    await expect(fakeIpcMain.handlers.get("knowledge:qdrantStatus")?.({})).resolves.toEqual(localQdrantStatus);
   });
 
   it("rejects refresh for an unknown video task without calling the provider", async () => {

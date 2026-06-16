@@ -163,6 +163,13 @@ fieldset {
   background: #fbfcfa;
 }
 
+.field-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #53615d;
+  font-size: 14px;
+}
+
 legend {
   padding: 0 8px;
   color: #1f2d2b;

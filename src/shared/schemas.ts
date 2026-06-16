@@ -6,13 +6,14 @@ export const modelConfigSchema = z.object({
 });
 
 export const defaultEmbeddingModelName = "Qwen/Qwen3-VL-Embedding-8B";
-export const defaultQdrantUrl = "http://localhost:6333";
+export const defaultQdrantUrl = "http://127.0.0.1:6333";
 export const defaultQdrantCollectionPrefix = "teacherhelper";
 
 export const qdrantConfigSchema = z.object({
-  url: z.string(),
-  apiKey: z.string(),
-  collectionPrefix: z.string()
+  mode: z.enum(["local", "remote"]).default("local"),
+  url: z.string().default(defaultQdrantUrl),
+  apiKey: z.string().default(""),
+  collectionPrefix: z.string().default(defaultQdrantCollectionPrefix)
 });
 
 export const appSettingsSchema = z.object({
@@ -23,6 +24,7 @@ export const appSettingsSchema = z.object({
     modelName: defaultEmbeddingModelName
   }),
   qdrant: qdrantConfigSchema.default({
+    mode: "local",
     url: defaultQdrantUrl,
     apiKey: "",
     collectionPrefix: defaultQdrantCollectionPrefix

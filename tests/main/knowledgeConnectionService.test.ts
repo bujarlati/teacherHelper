@@ -6,7 +6,7 @@ const settings: AppSettings = {
   textModel: { apiKey: "text-key", modelName: "text-model" },
   videoModel: { apiKey: "video-key", modelName: "video-model" },
   embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
-  qdrant: { url: "http://localhost:6333", apiKey: "qdrant-key", collectionPrefix: "teacherhelper" }
+  qdrant: { mode: "remote", url: "https://cluster.example.qdrant.io", apiKey: "qdrant-key", collectionPrefix: "teacherhelper" }
 };
 
 describe("testKnowledgeConnections", () => {
@@ -29,7 +29,7 @@ describe("testKnowledgeConnections", () => {
       input: "teacherHelper knowledge connection test"
     });
     expect(qdrantClient.testConnection).toHaveBeenCalledWith({
-      url: "http://localhost:6333",
+      url: "https://cluster.example.qdrant.io",
       apiKey: "qdrant-key"
     });
   });

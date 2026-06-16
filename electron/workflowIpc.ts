@@ -2,7 +2,13 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { lessonPlanSchema } from "../src/shared/schemas.js";
-import type { AppSettings, KnowledgeConnectionTestResult, LessonPlan, ProblemDemoPlan } from "../src/shared/types.js";
+import type {
+  AppSettings,
+  KnowledgeConnectionTestResult,
+  LessonPlan,
+  LocalQdrantStatus,
+  ProblemDemoPlan
+} from "../src/shared/types.js";
 import type { DemoRecord, LessonRecord, VideoRecord } from "../src/main/historyStore.js";
 import type { EmbeddingClientLike, QdrantClientLike } from "../src/main/knowledgeConnectionService.js";
 import type { IpcMainLike } from "./settingsIpc.js";
@@ -31,6 +37,10 @@ type WorkflowDeps = {
   dataDir: string;
   client: unknown;
   qdrantClient?: QdrantClientLike;
+  localQdrantManager?: {
+    ensureRunning(settings: AppSettings): Promise<LocalQdrantStatus>;
+    getStatus(): LocalQdrantStatus;
+  };
   createId(): string;
   now(): string;
   testKnowledgeConnections?(input: {
@@ -204,12 +214,23 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
     }
 
     const settings = await deps.configStore.load();
+    if (settings.qdrant.mode === "local") {
+      await deps.localQdrantManager?.ensureRunning(settings);
+    }
 
     return deps.testKnowledgeConnections({
       settings,
       embeddingClient: deps.client as EmbeddingClientLike,
       qdrantClient: deps.qdrantClient
     });
+  });
+
+  ipcMainLike.handle("knowledge:qdrantStatus", async () => {
+    if (!deps.localQdrantManager) {
+      throw new Error("本地向量库服务未初始化。");
+    }
+
+    return deps.localQdrantManager.getStatus();
   });
 
   ipcMainLike.handle("history:list", async () => ({

@@ -1,4 +1,4 @@
-import { ipcMain, shell } from "electron";
+import { app, ipcMain, shell } from "electron";
 import { randomUUID } from "node:crypto";
 import { createConfigStore } from "../src/main/configStore.js";
 import { exportLessonDocx } from "../src/main/docxExporter.js";
@@ -10,6 +10,7 @@ import { renderSimpleDemoHtml } from "../src/main/demo/renderSimpleDemo.js";
 import { createHistoryStore } from "../src/main/historyStore.js";
 import { testKnowledgeConnections } from "../src/main/knowledgeConnectionService.js";
 import { generateLessonPlan } from "../src/main/lessonService.js";
+import { createLocalQdrantManager } from "../src/main/localQdrantManager.js";
 import { getAppDataDir } from "../src/main/paths.js";
 import { createQdrantClient } from "../src/main/qdrantClient.js";
 import { createSiliconFlowClient } from "../src/main/siliconflowClient.js";
@@ -23,6 +24,16 @@ export function registerIpcHandlers(): void {
   const historyStore = createHistoryStore(dataDir);
   const client = createSiliconFlowClient();
   const qdrantClient = createQdrantClient();
+  const localQdrantManager = createLocalQdrantManager({ dataDir });
+
+  void configStore.load()
+    .then((settings) => localQdrantManager.ensureRunning(settings))
+    .catch((error: unknown) => {
+      console.warn("Failed to start local Qdrant", error);
+    });
+  app.on("before-quit", () => {
+    void localQdrantManager.stop();
+  });
 
   registerSettingsIpcHandlers(ipcMain, configStore);
   registerWorkflowIpcHandlers(ipcMain, {
@@ -31,6 +42,7 @@ export function registerIpcHandlers(): void {
     dataDir,
     client,
     qdrantClient,
+    localQdrantManager,
     createId: randomUUID,
     now: () => new Date().toISOString(),
     testKnowledgeConnections,

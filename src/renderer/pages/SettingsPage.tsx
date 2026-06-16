@@ -5,7 +5,7 @@ import {
   defaultQdrantCollectionPrefix,
   defaultQdrantUrl
 } from "../../shared/schemas";
-import type { AppSettings } from "../../shared/types";
+import type { AppSettings, LocalQdrantStatus } from "../../shared/types";
 import { api } from "../api";
 
 function createEmptySettings(): AppSettings {
@@ -23,6 +23,7 @@ function createEmptySettings(): AppSettings {
       modelName: defaultEmbeddingModelName
     },
     qdrant: {
+      mode: "local",
       url: defaultQdrantUrl,
       apiKey: "",
       collectionPrefix: defaultQdrantCollectionPrefix
@@ -39,10 +40,12 @@ type StatusMessage = {
 
 export function SettingsPage(): ReactElement {
   const [settings, setSettings] = useState<AppSettings>(() => createEmptySettings());
+  const [qdrantStatus, setQdrantStatus] = useState<LocalQdrantStatus | undefined>();
   const [status, setStatus] = useState<StatusMessage>({ tone: "muted", text: "正在读取本机设置..." });
   const [isLoading, setIsLoading] = useState(true);
   const [isBusy, setIsBusy] = useState(false);
   const controlsDisabled = isLoading || isBusy;
+  const isLocalQdrant = settings.qdrant.mode === "local";
 
   useEffect(() => {
     let isMounted = true;
@@ -57,6 +60,7 @@ export function SettingsPage(): ReactElement {
 
         setSettings(loadedSettings);
         setStatus({ tone: "muted", text: "设置仅保存在本机。" });
+        void refreshQdrantStatus();
       } catch {
         if (isMounted) {
           setStatus({ tone: "error", text: "读取本机设置失败。" });
@@ -110,11 +114,20 @@ export function SettingsPage(): ReactElement {
     try {
       await api.saveSettings(settings);
       await api.testKnowledgeConnections();
+      await refreshQdrantStatus();
       setStatus({ tone: "success", text: "知识库连接测试通过。" });
     } catch (error) {
       setStatus({ tone: "error", text: getErrorMessage(error, "知识库连接测试失败，请检查 API Key、模型名和 Qdrant 地址。") });
     } finally {
       setIsBusy(false);
+    }
+  }
+
+  async function refreshQdrantStatus(): Promise<void> {
+    try {
+      setQdrantStatus(await api.getQdrantStatus());
+    } catch {
+      setQdrantStatus(undefined);
     }
   }
 
@@ -218,11 +231,34 @@ export function SettingsPage(): ReactElement {
 
         <fieldset>
           <legend>Qdrant 向量库</legend>
+          <p className="field-note">{describeQdrantStatus(qdrantStatus)}</p>
+          <label>
+            <span>Qdrant 模式</span>
+            <select
+              disabled={controlsDisabled}
+              value={settings.qdrant.mode}
+              onChange={(event) => {
+                const mode = event.target.value === "remote" ? "remote" : "local";
+                setSettings({
+                  ...settings,
+                  qdrant: {
+                    ...settings.qdrant,
+                    mode,
+                    url: mode === "local" ? defaultQdrantUrl : settings.qdrant.url,
+                    apiKey: mode === "local" ? "" : settings.qdrant.apiKey
+                  }
+                });
+              }}
+            >
+              <option value="local">本地自动启动</option>
+              <option value="remote">远程服务</option>
+            </select>
+          </label>
           <label>
             <span>Qdrant 地址</span>
             <input
               autoComplete="off"
-              disabled={controlsDisabled}
+              disabled={controlsDisabled || isLocalQdrant}
               value={settings.qdrant.url}
               onChange={(event) => setSettings({
                 ...settings,
@@ -235,7 +271,7 @@ export function SettingsPage(): ReactElement {
             <input
               type="password"
               autoComplete="off"
-              disabled={controlsDisabled}
+              disabled={controlsDisabled || isLocalQdrant}
               value={settings.qdrant.apiKey}
               onChange={(event) => setSettings({
                 ...settings,
@@ -278,4 +314,15 @@ export function SettingsPage(): ReactElement {
 
 function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function describeQdrantStatus(status: LocalQdrantStatus | undefined): string {
+  if (!status) return "正在读取本地向量库状态...";
+  if (status.mode === "remote") return "正在使用远程向量库";
+  if (status.status === "running") return "本地向量库运行中";
+  if (status.status === "starting") return "本地向量库正在启动";
+  if (status.status === "missing") return "未找到内置 Qdrant";
+  if (status.status === "failed") return status.message ?? "本地向量库启动失败";
+
+  return "本地向量库未启动";
 }

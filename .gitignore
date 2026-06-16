@@ -8,3 +8,4 @@ playwright-report/
 .env
 .superpowers/
 teacherhelper-data/
+resources/qdrant/.qdrant-initialized

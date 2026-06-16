@@ -135,11 +135,18 @@ describe("appSettingsSchema", () => {
       textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
       videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
       embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
-      qdrant: { url: "http://localhost:6333", apiKey: "qdrant-key", collectionPrefix: "teacherhelper" }
+      qdrant: {
+        mode: "remote",
+        url: "https://cluster.example.qdrant.io",
+        apiKey: "qdrant-key",
+        collectionPrefix: "teacherhelper"
+      }
     });
 
     expect(parsed.videoModel.apiKey).toBe("video-key");
     expect(parsed.embeddingModel.modelName).toBe("Qwen/Qwen3-VL-Embedding-8B");
+    expect(parsed.qdrant.mode).toBe("remote");
+    expect(parsed.qdrant.url).toBe("https://cluster.example.qdrant.io");
     expect(parsed.qdrant.collectionPrefix).toBe("teacherhelper");
   });
 
@@ -154,6 +161,23 @@ describe("appSettingsSchema", () => {
       modelName: "Qwen/Qwen3-VL-Embedding-8B"
     });
     expect(parsed.qdrant).toEqual({
+      mode: "local",
+      url: "http://127.0.0.1:6333",
+      apiKey: "",
+      collectionPrefix: "teacherhelper"
+    });
+  });
+
+  it("fills local qdrant mode for settings saved before local hosting", () => {
+    const parsed = appSettingsSchema.parse({
+      textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
+      videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
+      embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      qdrant: { url: "http://localhost:6333", apiKey: "", collectionPrefix: "teacherhelper" }
+    });
+
+    expect(parsed.qdrant).toEqual({
+      mode: "local",
       url: "http://localhost:6333",
       apiKey: "",
       collectionPrefix: "teacherhelper"

@@ -1,0 +1,6 @@
+Qdrant v1.18.2
+
+Source:
+https://github.com/qdrant/qdrant/releases/download/v1.18.2/qdrant-x86_64-pc-windows-msvc.zip
+
+This bundled binary is used by teacherHelper to start a local Qdrant instance automatically.

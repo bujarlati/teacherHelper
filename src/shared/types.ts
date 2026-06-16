@@ -4,9 +4,21 @@ export type ModelConfig = {
 };
 
 export type QdrantConfig = {
+  mode: "local" | "remote";
   url: string;
   apiKey: string;
   collectionPrefix: string;
+};
+
+export type LocalQdrantStatus = {
+  mode: "local" | "remote";
+  status: "starting" | "running" | "stopped" | "missing" | "failed" | "remote";
+  url: string;
+  storagePath?: string;
+  binaryPath?: string;
+  pid?: number;
+  managed?: boolean;
+  message?: string;
 };
 
 export type AppSettings = {

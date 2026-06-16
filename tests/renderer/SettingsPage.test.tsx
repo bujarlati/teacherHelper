@@ -17,8 +17,9 @@ const storedSettings: AppSettings = {
     modelName: "Qwen/Qwen3-VL-Embedding-8B"
   },
   qdrant: {
-    url: "http://localhost:6333",
-    apiKey: "qdrant-key",
+    mode: "local",
+    url: "http://127.0.0.1:6333",
+    apiKey: "",
     collectionPrefix: "teacherhelper"
   }
 };
@@ -33,7 +34,14 @@ describe("SettingsPage", () => {
         loadSettings: vi.fn().mockResolvedValue(storedSettings),
         saveSettings: vi.fn().mockResolvedValue(undefined),
         clearSettings: vi.fn().mockResolvedValue(undefined),
-        testKnowledgeConnections: vi.fn().mockResolvedValue({ embedding: "ok", qdrant: "ok" })
+        testKnowledgeConnections: vi.fn().mockResolvedValue({ embedding: "ok", qdrant: "ok" }),
+        getQdrantStatus: vi.fn().mockResolvedValue({
+          mode: "local",
+          status: "running",
+          url: "http://127.0.0.1:6333",
+          storagePath: "D:\\teacherHelper\\teacherhelper-data\\qdrant\\storage",
+          managed: true
+        })
       }
     });
   });
@@ -54,12 +62,13 @@ describe("SettingsPage", () => {
     expect(screen.getByDisplayValue("Wan-AI/Wan2.2-T2V-A14B")).toBeTruthy();
     expect(screen.getByDisplayValue("embedding-key")).toBeTruthy();
     expect(screen.getByDisplayValue("Qwen/Qwen3-VL-Embedding-8B")).toBeTruthy();
-    expect(screen.getByDisplayValue("http://localhost:6333")).toBeTruthy();
-    expect(screen.getByDisplayValue("qdrant-key")).toBeTruthy();
+    expect(screen.getByDisplayValue("http://127.0.0.1:6333")).toBeTruthy();
+    expect(screen.getByText("本地向量库运行中")).toBeTruthy();
     expect(screen.getByLabelText("文本 API Key")).toHaveProperty("type", "password");
     expect(screen.getByLabelText("视频 API Key")).toHaveProperty("type", "password");
     expect(screen.getByLabelText("嵌入 API Key")).toHaveProperty("type", "password");
     expect(screen.getByLabelText("Qdrant API Key")).toHaveProperty("type", "password");
+    expect(screen.getByLabelText("Qdrant API Key")).toHaveProperty("disabled", true);
 
     fireEvent.change(screen.getByLabelText("文本 API Key"), {
       target: { value: "updated-text-key" }
@@ -87,8 +96,9 @@ describe("SettingsPage", () => {
           modelName: "Qwen/Qwen3-VL-Embedding-8B"
         },
         qdrant: {
-          url: "http://localhost:6333",
-          apiKey: "qdrant-key",
+          mode: "local",
+          url: "http://127.0.0.1:6333",
+          apiKey: "",
           collectionPrefix: "teacherhelper-math"
         }
       });
@@ -106,7 +116,8 @@ describe("SettingsPage", () => {
     expect(screen.getByLabelText("视频模型名")).toHaveProperty("value", "");
     expect(screen.getByLabelText("嵌入 API Key")).toHaveProperty("value", "");
     expect(screen.getByLabelText("嵌入模型名")).toHaveProperty("value", "Qwen/Qwen3-VL-Embedding-8B");
-    expect(screen.getByLabelText("Qdrant 地址")).toHaveProperty("value", "http://localhost:6333");
+    expect(screen.getByLabelText("Qdrant 模式")).toHaveProperty("value", "local");
+    expect(screen.getByLabelText("Qdrant 地址")).toHaveProperty("value", "http://127.0.0.1:6333");
     expect(screen.getByLabelText("Qdrant API Key")).toHaveProperty("value", "");
     expect(screen.getByLabelText("集合前缀")).toHaveProperty("value", "teacherhelper");
     expect(await screen.findByText("本地设置已清空。")).toBeTruthy();
@@ -125,6 +136,32 @@ describe("SettingsPage", () => {
       expect(window.teacherHelper.testKnowledgeConnections).toHaveBeenCalledTimes(1);
     });
     expect(await screen.findByText("知识库连接测试通过。")).toBeTruthy();
+    await waitFor(() => {
+      expect(window.teacherHelper.getQdrantStatus).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  test("enables remote qdrant fields when switching to remote mode", async () => {
+    const { SettingsPage } = await import("../../src/renderer/pages/SettingsPage");
+
+    render(<SettingsPage />);
+
+    expect(await screen.findByDisplayValue("http://127.0.0.1:6333")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Qdrant 模式"), { target: { value: "remote" } });
+    fireEvent.change(screen.getByLabelText("Qdrant 地址"), { target: { value: "https://cluster.example.qdrant.io" } });
+    fireEvent.change(screen.getByLabelText("Qdrant API Key"), { target: { value: "qdrant-key" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
+
+    await waitFor(() => {
+      expect(window.teacherHelper.saveSettings).toHaveBeenCalledWith(expect.objectContaining({
+        qdrant: {
+          mode: "remote",
+          url: "https://cluster.example.qdrant.io",
+          apiKey: "qdrant-key",
+          collectionPrefix: "teacherhelper"
+        }
+      }));
+    });
   });
 
   test("shows a read failure when the preload api is missing", async () => {
@@ -149,7 +186,12 @@ describe("SettingsPage", () => {
         loadSettings: vi.fn().mockReturnValue(loadSettingsPromise),
         saveSettings: vi.fn().mockResolvedValue(undefined),
         clearSettings: vi.fn().mockResolvedValue(undefined),
-        testKnowledgeConnections: vi.fn().mockResolvedValue({ embedding: "ok", qdrant: "ok" })
+        testKnowledgeConnections: vi.fn().mockResolvedValue({ embedding: "ok", qdrant: "ok" }),
+        getQdrantStatus: vi.fn().mockResolvedValue({
+          mode: "local",
+          status: "starting",
+          url: "http://127.0.0.1:6333"
+        })
       }
     });
 
