@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import type { ReactElement } from "react";
 import type { LessonPlan, VideoTask } from "../../shared/types";
 import { api } from "../api";
@@ -17,16 +17,38 @@ type LessonResult = {
   videoError?: string;
 };
 
+type GenerationProgress = {
+  phase: string;
+  elapsedSeconds: number;
+  percent: number;
+  isSlow: boolean;
+};
+
 export function LessonPage(): ReactElement {
   const [topic, setTopic] = useState("");
   const [result, setResult] = useState<LessonResult | undefined>();
   const [exportPath, setExportPath] = useState("");
   const [status, setStatus] = useState<StatusMessage>({ tone: "muted", text: "输入课题后生成教案。" });
+  const [generationProgress, setGenerationProgress] = useState<GenerationProgress | undefined>();
   const [isGenerating, setIsGenerating] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
   const hasLesson = Boolean(result);
   const isBusy = isGenerating || isExporting || isCopying;
+
+  useEffect(() => {
+    if (!isGenerating) return undefined;
+
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+      setGenerationProgress(createGenerationProgress(elapsedSeconds));
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [isGenerating]);
 
   async function handleGenerate(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -37,6 +59,7 @@ export function LessonPage(): ReactElement {
     }
 
     setIsGenerating(true);
+    setGenerationProgress(createGenerationProgress(0));
     setExportPath("");
     setStatus({ tone: "muted", text: "正在生成教案..." });
 
@@ -50,6 +73,7 @@ export function LessonPage(): ReactElement {
     } catch (error) {
       setStatus({ tone: "error", text: getErrorMessage(error, "生成教案失败，请检查设置后重试。") });
     } finally {
+      setGenerationProgress(undefined);
       setIsGenerating(false);
     }
   }
@@ -121,6 +145,28 @@ export function LessonPage(): ReactElement {
         </div>
       </form>
 
+      {generationProgress ? (
+        <section className="generation-progress" aria-label="教案生成进度说明">
+          <div className="progress-heading">
+            <strong>{generationProgress.phase}</strong>
+            <span>已等待 {generationProgress.elapsedSeconds} 秒</span>
+          </div>
+          <div
+            className="progress-track"
+            role="progressbar"
+            aria-label="教案生成进度"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={generationProgress.percent}
+          >
+            <span style={{ width: `${generationProgress.percent}%` }} />
+          </div>
+          {generationProgress.isSlow ? (
+            <p>模型仍在生成，可能是网络或模型排队较慢。</p>
+          ) : null}
+        </section>
+      ) : null}
+
       {exportPath ? (
         <p className="path-output" aria-label="导出路径">{exportPath}</p>
       ) : null}
@@ -148,4 +194,13 @@ function getLessonGenerateStatus(result: LessonResult): string {
   }
 
   return "未配置视频模型，仅保留视频脚本和提示词。";
+}
+
+function createGenerationProgress(elapsedSeconds: number): GenerationProgress {
+  return {
+    phase: elapsedSeconds < 3 ? "准备请求" : "等待硅基流动模型返回",
+    elapsedSeconds,
+    percent: Math.min(92, 8 + elapsedSeconds * 2),
+    isSlow: elapsedSeconds >= 60
+  };
 }

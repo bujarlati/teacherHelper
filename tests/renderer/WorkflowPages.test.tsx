@@ -70,6 +70,7 @@ describe("workflow pages", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   test("LessonPage generates a lesson and supports export and copy", async () => {
@@ -118,6 +119,45 @@ describe("workflow pages", () => {
 
     expect(await screen.findByText("# 一次函数复习", { exact: false })).toBeTruthy();
     expect(screen.getByText("教案已生成，视频任务提交失败：video quota exceeded")).toBeTruthy();
+  });
+
+  test("LessonPage shows progress, elapsed time, and slow-generation guidance while generating", async () => {
+    vi.useFakeTimers();
+    window.teacherHelper.generateLesson = vi.fn().mockReturnValue(new Promise(() => undefined));
+    const { LessonPage } = await import("../../src/renderer/pages/LessonPage");
+
+    render(<LessonPage />);
+
+    fireEvent.change(screen.getByLabelText("课题"), { target: { value: "一次函数" } });
+    fireEvent.click(screen.getByRole("button", { name: "生成教案" }));
+
+    expect(screen.getByRole("progressbar", { name: "教案生成进度" })).toBeTruthy();
+    expect(screen.getByText("准备请求")).toBeTruthy();
+    expect(screen.getByText("已等待 0 秒")).toBeTruthy();
+
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(screen.getByText("等待硅基流动模型返回")).toBeTruthy();
+    expect(screen.getByText("已等待 6 秒")).toBeTruthy();
+
+    await vi.advanceTimersByTimeAsync(54000);
+    expect(screen.getByText("模型仍在生成，可能是网络或模型排队较慢。")).toBeTruthy();
+    vi.useRealTimers();
+  });
+
+  test("LessonPage hides progress and shows the failure reason when generation fails", async () => {
+    window.teacherHelper.generateLesson = vi.fn().mockRejectedValue(
+      new Error("硅基流动请求超时，请检查网络、API Key、模型名或稍后重试。")
+    );
+    const { LessonPage } = await import("../../src/renderer/pages/LessonPage");
+
+    render(<LessonPage />);
+
+    fireEvent.change(screen.getByLabelText("课题"), { target: { value: "一次函数" } });
+    fireEvent.click(screen.getByRole("button", { name: "生成教案" }));
+
+    expect(await screen.findByText("硅基流动请求超时，请检查网络、API Key、模型名或稍后重试。")).toBeTruthy();
+    expect(screen.queryByRole("progressbar", { name: "教案生成进度" })).toBeNull();
+    expect((screen.getByRole("button", { name: "生成教案" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   test("DemoPage generates a demo and shows the returned URL and plan details", async () => {

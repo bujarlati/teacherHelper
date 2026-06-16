@@ -14,6 +14,7 @@ type FetchImpl = typeof fetch;
 type ClientOptions = {
   fetchImpl?: FetchImpl;
   baseUrl?: string;
+  timeoutMs?: number;
 };
 
 type ChatMessage = {
@@ -32,26 +33,43 @@ type VideoStatusResult = {
 export function createSiliconFlowClient(options: ClientOptions = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const baseUrl = (options.baseUrl ?? "https://api.siliconflow.cn/v1").replace(/\/$/, "");
+  const timeoutMs = options.timeoutMs ?? 120_000;
 
   async function requestJson(path: string, apiKey: string, init: RequestInit): Promise<unknown> {
-    const response = await fetchImpl(`${baseUrl}${path}`, {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...(init.headers ?? {}),
-        Authorization: `Bearer ${apiKey}`
-      }
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`SiliconFlow request failed: ${response.status} ${text}`);
-    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, timeoutMs);
 
     try {
-      return await response.json();
-    } catch {
-      throw new Error("SiliconFlow returned invalid JSON");
+      const response = await fetchImpl(`${baseUrl}${path}`, {
+        ...init,
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          ...(init.headers ?? {}),
+          Authorization: `Bearer ${apiKey}`
+        }
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`SiliconFlow request failed: ${response.status} ${text}`);
+      }
+
+      try {
+        return await response.json();
+      } catch {
+        throw new Error("SiliconFlow returned invalid JSON");
+      }
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new Error("硅基流动请求超时，请检查网络、API Key、模型名或稍后重试。");
+      }
+
+      throw error;
+    } finally {
+      clearTimeout(timeout);
     }
   }
 

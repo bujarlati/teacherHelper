@@ -244,6 +244,50 @@ textarea:focus {
   font-weight: 600;
 }
 
+.generation-progress {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #d2d9d5;
+  border-radius: 8px;
+  margin: 0 0 18px;
+  padding: 14px;
+  background: #fbfcfa;
+}
+
+.progress-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #1f2d2b;
+}
+
+.progress-heading span,
+.generation-progress p {
+  color: #53615d;
+  font-size: 14px;
+}
+
+.generation-progress p {
+  margin: 0;
+}
+
+.progress-track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dbe4df;
+}
+
+.progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #315b50;
+  transition: width 200ms ease;
+}
+
 .result-section {
   display: grid;
   gap: 12px;

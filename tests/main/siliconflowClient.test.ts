@@ -102,6 +102,38 @@ describe("createSiliconFlowClient", () => {
     );
   });
 
+  it("aborts slow requests and returns a clear timeout error", async () => {
+    vi.useFakeTimers();
+    let observedSignal: AbortSignal | undefined;
+    const fetchMock = vi.fn((_url: string | URL | Request, init?: RequestInit) => {
+      observedSignal = init?.signal ?? undefined;
+
+      return new Promise<Response>((_resolve, reject) => {
+        observedSignal?.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      });
+    });
+    const client = createSiliconFlowClient({
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      timeoutMs: 50
+    });
+
+    const request = client.chatCompletion({
+      apiKey: "key",
+      modelName: "model",
+      messages: [{ role: "user", content: "hello" }]
+    }).catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(50);
+    const error = await request;
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe("硅基流动请求超时，请检查网络、API Key、模型名或稍后重试。");
+    expect(observedSignal?.aborted).toBe(true);
+    vi.useRealTimers();
+  });
+
   it("rejects chat responses without first choice content", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ choices: [] }));
     const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
