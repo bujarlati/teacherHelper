@@ -10,6 +10,8 @@ import type {
   ProblemDemoPlan,
   TextbookIndexItem,
   TextbookRecord,
+  TextbookResourceCatalog,
+  TextbookResourceFile,
   TextbookSearchResult
 } from "../src/shared/types.js";
 import type { DemoRecord, LessonRecord, VideoRecord } from "../src/main/historyStore.js";
@@ -39,6 +41,11 @@ type TextbookStoreLike = {
   list(): Promise<TextbookRecord[]>;
 };
 
+type TextbookResourceServiceLike = {
+  getCatalog(): Promise<TextbookResourceCatalog>;
+  readResource(id: string): Promise<TextbookResourceFile>;
+};
+
 type QdrantClientLike = KnowledgeQdrantClientLike & {
   ensureCollection(input: {
     url: string;
@@ -65,6 +72,7 @@ type WorkflowDeps = {
   configStore: ConfigStoreLike;
   historyStore: HistoryStoreLike;
   textbookStore?: TextbookStoreLike;
+  textbookResourceService?: TextbookResourceServiceLike;
   dataDir: string;
   client: unknown;
   qdrantClient?: QdrantClientLike;
@@ -112,6 +120,7 @@ type WorkflowDeps = {
   renderSimpleDemoHtml(plan: ProblemDemoPlan): string;
   startDemoServer(rootDir: string): Promise<DemoServer>;
   openExternal(url: string): Promise<void>;
+  openPath?(path: string): Promise<string>;
   exportLessonDocx(input: { filePath: string; lesson: LessonPlan }): Promise<void>;
   indexTextbook?(input: {
     id: string;
@@ -302,6 +311,44 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
     }
 
     return deps.localQdrantManager.getStatus();
+  });
+
+  ipcMainLike.handle("textbook:resources", async () => {
+    if (!deps.textbookResourceService) {
+      throw new Error("教材资源服务未初始化。");
+    }
+
+    return deps.textbookResourceService.getCatalog();
+  });
+
+  ipcMainLike.handle("textbook:readResource", async (_event, resourceIdInput) => {
+    if (!deps.textbookResourceService) {
+      throw new Error("教材资源服务未初始化。");
+    }
+
+    const resourceId = nonEmptyStringSchema.parse(resourceIdInput);
+    return deps.textbookResourceService.readResource(resourceId);
+  });
+
+  ipcMainLike.handle("textbook:openResourceFolder", async () => {
+    if (!deps.textbookResourceService || !deps.openPath) {
+      throw new Error("教材资源服务未初始化。");
+    }
+
+    const catalog = await deps.textbookResourceService.getCatalog();
+    const result = await deps.openPath(catalog.libraryDir);
+    if (result) {
+      throw new Error(result);
+    }
+  });
+
+  ipcMainLike.handle("textbook:openDownloadPage", async () => {
+    if (!deps.textbookResourceService) {
+      throw new Error("教材资源服务未初始化。");
+    }
+
+    const catalog = await deps.textbookResourceService.getCatalog();
+    await deps.openExternal(catalog.downloadUrl);
   });
 
   ipcMainLike.handle("textbook:index", async (_event, input) => {

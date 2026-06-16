@@ -133,6 +133,29 @@ export type TextbookRecord = {
   error?: string;
 };
 
+export type TextbookResourceSource = "library" | "bundle";
+
+export type TextbookResource = {
+  id: string;
+  title: string;
+  fileName: string;
+  relativePath: string;
+  absolutePath: string;
+  source: TextbookResourceSource;
+  sizeBytes: number;
+};
+
+export type TextbookResourceCatalog = {
+  downloadUrl: string;
+  libraryDir: string;
+  resources: TextbookResource[];
+};
+
+export type TextbookResourceFile = {
+  resource: TextbookResource;
+  dataBase64: string;
+};
+
 export type TextbookSearchResult = {
   id: string;
   score: number;

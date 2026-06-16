@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerWorkflowIpcHandlers } from "../../electron/workflowIpc";
 import type { AppSettings, LessonPlan, LocalQdrantStatus, ProblemDemoPlan } from "../../src/shared/types";
-import type { TextbookIndexItem, TextbookRecord, TextbookSearchResult } from "../../src/shared/types";
+import type { TextbookIndexItem, TextbookRecord, TextbookResourceCatalog, TextbookSearchResult } from "../../src/shared/types";
 import type { DemoRecord, LessonRecord, VideoRecord } from "../../src/main/historyStore";
 
 type Handler = (_event: unknown, ...args: unknown[]) => unknown;
@@ -802,6 +802,49 @@ describe("registerWorkflowIpcHandlers", () => {
       qdrantClient: deps.qdrantClient,
       limit: 4
     });
+  });
+
+  it("lists textbook resource PDFs, reads one resource, and opens resource locations", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const catalog: TextbookResourceCatalog = {
+      downloadUrl: "https://github.com/TapXWorld/ChinaTextbook",
+      libraryDir: "D:\\teacherhelper-data\\textbook-pdfs",
+      resources: [{
+        id: "library:book-1",
+        title: "八年级数学",
+        fileName: "八年级数学.pdf",
+        relativePath: "八年级数学.pdf",
+        absolutePath: "D:\\teacherhelper-data\\textbook-pdfs\\八年级数学.pdf",
+        source: "library",
+        sizeBytes: 1024
+      }]
+    };
+    const textbookResourceService = {
+      getCatalog: vi.fn().mockResolvedValue(catalog),
+      readResource: vi.fn().mockResolvedValue({
+        resource: catalog.resources[0],
+        dataBase64: "JVBERg=="
+      })
+    };
+    const openExternal = vi.fn().mockResolvedValue(undefined);
+    const openPath = vi.fn().mockResolvedValue("");
+
+    registerWorkflowIpcHandlers(fakeIpcMain, createBaseDeps({
+      textbookResourceService,
+      openExternal,
+      openPath
+    }));
+
+    await expect(fakeIpcMain.handlers.get("textbook:resources")?.({})).resolves.toEqual(catalog);
+    await expect(fakeIpcMain.handlers.get("textbook:readResource")?.({}, " library:book-1 ")).resolves.toEqual({
+      resource: catalog.resources[0],
+      dataBase64: "JVBERg=="
+    });
+    await expect(fakeIpcMain.handlers.get("textbook:openResourceFolder")?.({})).resolves.toBeUndefined();
+    await expect(fakeIpcMain.handlers.get("textbook:openDownloadPage")?.({})).resolves.toBeUndefined();
+    expect(textbookResourceService.readResource).toHaveBeenCalledWith("library:book-1");
+    expect(openPath).toHaveBeenCalledWith(catalog.libraryDir);
+    expect(openExternal).toHaveBeenCalledWith(catalog.downloadUrl);
   });
 
   it("rejects refresh for an unknown video task without calling the provider", async () => {

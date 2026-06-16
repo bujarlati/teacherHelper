@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { LessonPlan, ProblemDemoPlan, VideoTask } from "../../src/shared/types";
-import type { TextbookRecord, TextbookSearchResult } from "../../src/shared/types";
+import type { TextbookRecord, TextbookResourceCatalog, TextbookSearchResult } from "../../src/shared/types";
 import type { DemoRecord, LessonRecord, VideoRecord } from "../../src/main/historyStore";
 
 const lesson: LessonPlan = {
@@ -65,6 +65,20 @@ const textbookSearchResult: TextbookSearchResult = {
   imagePath: "D:\\teacherHelper-data\\textbooks\\book-1\\pages\\page-002.png"
 };
 
+const textbookResourceCatalog: TextbookResourceCatalog = {
+  downloadUrl: "https://github.com/TapXWorld/ChinaTextbook",
+  libraryDir: "D:\\teacherHelper-data\\textbook-pdfs",
+  resources: [{
+    id: "library:math-8",
+    title: "八年级数学下册",
+    fileName: "八年级数学下册.pdf",
+    relativePath: "初中/八年级数学下册.pdf",
+    absolutePath: "D:\\teacherHelper-data\\textbook-pdfs\\初中\\八年级数学下册.pdf",
+    source: "library",
+    sizeBytes: 2048
+  }]
+};
+
 describe("workflow pages", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -80,6 +94,10 @@ describe("workflow pages", () => {
         indexTextbook: vi.fn(),
         listTextbooks: vi.fn().mockResolvedValue([textbook]),
         searchTextbooks: vi.fn().mockResolvedValue([textbookSearchResult]),
+        listTextbookResources: vi.fn().mockResolvedValue(textbookResourceCatalog),
+        readTextbookResource: vi.fn(),
+        openTextbookResourceFolder: vi.fn().mockResolvedValue(undefined),
+        openTextbookDownloadPage: vi.fn().mockResolvedValue(undefined),
         generateLesson: vi.fn().mockResolvedValue({ id: "lesson-1", lesson, videoTask }),
         exportLessonDocx: vi.fn().mockResolvedValue("D:\\teacherHelper-data\\exports\\一次函数复习.docx"),
         generateVideo: vi.fn(),
@@ -242,6 +260,26 @@ describe("workflow pages", () => {
       expect(window.teacherHelper.searchTextbooks).toHaveBeenCalledWith({ query: "一次函数图像", limit: 6 });
     });
     expect(await screen.findByText("第 2 页 · page · 相似度 0.91")).toBeTruthy();
+  });
+
+  test("TextbookPage shows the textbook download URL and local resource folder", async () => {
+    const { TextbookPage } = await import("../../src/renderer/pages/TextbookPage");
+
+    render(<TextbookPage />);
+
+    expect(await screen.findByText("教材下载地址")).toBeTruthy();
+    expect(screen.getByText("https://github.com/TapXWorld/ChinaTextbook")).toBeTruthy();
+    expect(screen.getByText("D:\\teacherHelper-data\\textbook-pdfs")).toBeTruthy();
+    expect(screen.getByText("八年级数学下册")).toBeTruthy();
+    expect(screen.getByText("初中/八年级数学下册.pdf")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "打开下载页" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开教材目录" }));
+
+    await waitFor(() => {
+      expect(window.teacherHelper.openTextbookDownloadPage).toHaveBeenCalled();
+      expect(window.teacherHelper.openTextbookResourceFolder).toHaveBeenCalled();
+    });
   });
 
   test("VideoPage submits an image-to-video task and refreshes its status", async () => {

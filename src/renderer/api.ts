@@ -7,6 +7,8 @@ import type {
   ProblemDemoPlan,
   TextbookIndexItem,
   TextbookRecord,
+  TextbookResourceCatalog,
+  TextbookResourceFile,
   TextbookSearchResult,
   VideoGenerateInput,
   VideoTask
@@ -40,6 +42,10 @@ export type TeacherHelperRendererApi = {
   indexTextbook(input: { title: string; sourceName: string; items: TextbookIndexItem[] }): Promise<TextbookRecord>;
   listTextbooks(): Promise<TextbookRecord[]>;
   searchTextbooks(input: { query: string; limit?: number }): Promise<TextbookSearchResult[]>;
+  listTextbookResources(): Promise<TextbookResourceCatalog>;
+  readTextbookResource(resourceId: string): Promise<TextbookResourceFile>;
+  openTextbookResourceFolder(): Promise<void>;
+  openTextbookDownloadPage(): Promise<void>;
   generateLesson(topic: string): Promise<LessonGenerateResult>;
   exportLessonDocx(input: { id: string; title: string; lesson: LessonPlan }): Promise<string>;
   generateVideo(input: VideoGenerateInput): Promise<VideoRecord>;
@@ -71,6 +77,10 @@ export const api: TeacherHelperRendererApi = {
   indexTextbook: async (input) => getApi().indexTextbook(input),
   listTextbooks: async () => getApi().listTextbooks(),
   searchTextbooks: async (input) => getApi().searchTextbooks(input),
+  listTextbookResources: async () => getApi().listTextbookResources(),
+  readTextbookResource: async (resourceId) => getApi().readTextbookResource(resourceId),
+  openTextbookResourceFolder: async () => getApi().openTextbookResourceFolder(),
+  openTextbookDownloadPage: async () => getApi().openTextbookDownloadPage(),
   generateLesson: async (topic) => getApi().generateLesson(topic),
   exportLessonDocx: async (input) => getApi().exportLessonDocx(input),
   generateVideo: async (input) => getApi().generateVideo(input),

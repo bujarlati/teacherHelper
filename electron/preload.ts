@@ -7,6 +7,8 @@ import type {
   ProblemDemoPlan,
   TextbookIndexItem,
   TextbookRecord,
+  TextbookResourceCatalog,
+  TextbookResourceFile,
   TextbookSearchResult,
   VideoGenerateInput,
   VideoTask
@@ -22,6 +24,10 @@ export type TeacherHelperApi = {
   indexTextbook(input: { title: string; sourceName: string; items: TextbookIndexItem[] }): Promise<TextbookRecord>;
   listTextbooks(): Promise<TextbookRecord[]>;
   searchTextbooks(input: { query: string; limit?: number }): Promise<TextbookSearchResult[]>;
+  listTextbookResources(): Promise<TextbookResourceCatalog>;
+  readTextbookResource(resourceId: string): Promise<TextbookResourceFile>;
+  openTextbookResourceFolder(): Promise<void>;
+  openTextbookDownloadPage(): Promise<void>;
   generateLesson(topic: string): Promise<{ id: string; lesson: LessonPlan; videoTask?: VideoTask; videoError?: string }>;
   exportLessonDocx(input: { id: string; title: string; lesson: LessonPlan }): Promise<string>;
   generateVideo(input: VideoGenerateInput): Promise<VideoRecord>;
@@ -39,6 +45,10 @@ const teacherHelperApi: TeacherHelperApi = {
   indexTextbook: (input) => ipcRenderer.invoke("textbook:index", input) as Promise<TextbookRecord>,
   listTextbooks: () => ipcRenderer.invoke("textbook:list") as Promise<TextbookRecord[]>,
   searchTextbooks: (input) => ipcRenderer.invoke("textbook:search", input) as Promise<TextbookSearchResult[]>,
+  listTextbookResources: () => ipcRenderer.invoke("textbook:resources") as Promise<TextbookResourceCatalog>,
+  readTextbookResource: (resourceId) => ipcRenderer.invoke("textbook:readResource", resourceId) as Promise<TextbookResourceFile>,
+  openTextbookResourceFolder: () => ipcRenderer.invoke("textbook:openResourceFolder") as Promise<void>,
+  openTextbookDownloadPage: () => ipcRenderer.invoke("textbook:openDownloadPage") as Promise<void>,
   generateLesson: (topic) => ipcRenderer.invoke("lesson:generate", topic) as Promise<{
     id: string;
     lesson: LessonPlan;

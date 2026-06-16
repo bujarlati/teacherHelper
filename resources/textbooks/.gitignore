@@ -1,0 +1,8 @@
+*.pdf
+*.PDF
+*.zip
+*.7z
+*.rar
+*/
+!README.md
+!.gitignore
