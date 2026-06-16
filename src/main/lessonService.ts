@@ -5,6 +5,7 @@ import { buildLessonPrompt } from "./lessonPrompt.js";
 
 type ModelLessonPlan = Omit<LessonPlan, "markdown"> & { markdown?: string };
 
+const missingExampleAnswer = "需教师补充答案";
 const modelStringListSchema = z.preprocess(normalizeStringList, z.array(z.string().min(1)));
 const modelExampleQuestionSchema = z.preprocess(
   normalizeExampleQuestion,
@@ -196,7 +197,7 @@ function normalizeExampleQuestion(value: unknown): unknown {
   const match = text.match(/^(?:题目|问题|问|例题)?\s*[:：]?\s*(.*?)\s*(?:答案|答)\s*[:：]\s*(.+)$/s);
 
   if (!match?.[1]?.trim() || !match[2]?.trim()) {
-    return value;
+    return text ? { question: text, answer: missingExampleAnswer } : value;
   }
 
   return {
