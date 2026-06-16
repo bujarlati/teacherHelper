@@ -10,11 +10,15 @@ type StatusMessage = {
   text: string;
 };
 
+type LessonHistoryItem = HistoryListResult["lessons"][number];
+
 export function HistoryPage(): ReactElement {
   const [history, setHistory] = useState<HistoryListResult | undefined>();
   const [status, setStatus] = useState<StatusMessage>({ tone: "muted", text: "正在读取历史记录..." });
   const [isLoading, setIsLoading] = useState(true);
   const [refreshingVideoId, setRefreshingVideoId] = useState<string | undefined>();
+  const [selectedLesson, setSelectedLesson] = useState<LessonHistoryItem | undefined>();
+  const [isCopyingLesson, setIsCopyingLesson] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -71,6 +75,28 @@ export function HistoryPage(): ReactElement {
     }
   }
 
+  function handleOpenLesson(lesson: LessonHistoryItem): void {
+    setSelectedLesson(lesson);
+    setStatus({
+      tone: lesson.markdown ? "success" : "error",
+      text: lesson.markdown ? "历史教案已打开。" : "这条历史记录没有保存教案正文。"
+    });
+  }
+
+  async function handleCopyLessonMarkdown(): Promise<void> {
+    if (!selectedLesson?.markdown) return;
+
+    setIsCopyingLesson(true);
+    try {
+      await navigator.clipboard.writeText(selectedLesson.markdown);
+      setStatus({ tone: "success", text: "历史教案 Markdown 已复制。" });
+    } catch (error) {
+      setStatus({ tone: "error", text: getErrorMessage(error, "复制历史教案失败。") });
+    } finally {
+      setIsCopyingLesson(false);
+    }
+  }
+
   return (
     <section className="workspace-panel" aria-labelledby="history-title">
       <div className="section-heading">
@@ -90,11 +116,16 @@ export function HistoryPage(): ReactElement {
             <h2 id="lesson-history-title">教案</h2>
             <ul className="record-list">
               {history.lessons.map((lesson) => (
-                <li key={lesson.id}>
+                <li key={lesson.id} className={selectedLesson?.id === lesson.id ? "selected-record" : ""}>
                   <strong>{lesson.title}</strong>
                   <span>课题：{lesson.topic}</span>
                   <span>{formatDate(lesson.createdAt)}</span>
                   {lesson.wordPath ? <span>{lesson.wordPath}</span> : null}
+                  <div className="record-actions">
+                    <button type="button" className="secondary-button" onClick={() => handleOpenLesson(lesson)}>
+                      查看教案
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -141,6 +172,30 @@ export function HistoryPage(): ReactElement {
             </ul>
           </section>
         </div>
+      ) : null}
+
+      {selectedLesson ? (
+        <section className="result-section" aria-labelledby="history-lesson-detail-title">
+          <div className="detail-heading">
+            <div>
+              <p className="eyebrow">历史教案</p>
+              <h2 id="history-lesson-detail-title">{selectedLesson.title}</h2>
+            </div>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={isCopyingLesson || !selectedLesson.markdown}
+              onClick={() => void handleCopyLessonMarkdown()}
+            >
+              复制 Markdown
+            </button>
+          </div>
+          {selectedLesson.markdown ? (
+            <pre className="markdown-output">{selectedLesson.markdown}</pre>
+          ) : (
+            <p className="empty-state">这条历史记录没有保存教案正文。</p>
+          )}
+        </section>
       ) : null}
     </section>
   );

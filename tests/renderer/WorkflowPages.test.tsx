@@ -217,6 +217,33 @@ describe("workflow pages", () => {
     expect(screen.getByText("状态：InQueue")).toBeTruthy();
   });
 
+  test("HistoryPage opens a saved lesson and copies its markdown", async () => {
+    const lessons: LessonRecord[] = [{
+      id: "lesson-1",
+      title: "一次函数复习",
+      topic: "一次函数",
+      markdown: lesson.markdown,
+      createdAt: "2026-06-15T01:02:03.000Z"
+    }];
+    window.teacherHelper.listHistory = vi.fn().mockResolvedValue({ lessons, demos: [], videos: [] });
+    const { HistoryPage } = await import("../../src/renderer/pages/HistoryPage");
+
+    render(<HistoryPage />);
+
+    expect(await screen.findByText("一次函数复习")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "查看教案" }));
+
+    expect(screen.getByRole("heading", { name: "一次函数复习" })).toBeTruthy();
+    expect(screen.getByText("# 一次函数复习", { exact: false })).toBeTruthy();
+    expect(screen.getByText("## 视频脚本", { exact: false })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "复制 Markdown" }));
+    await waitFor(() => {
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(lesson.markdown);
+    });
+    expect(await screen.findByText("历史教案 Markdown 已复制。")).toBeTruthy();
+  });
+
   test("HistoryPage refreshes a queued video task and shows the returned video URL", async () => {
     const queuedVideo: VideoRecord = {
       id: "video-1",

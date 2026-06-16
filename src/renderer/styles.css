@@ -366,6 +366,11 @@ h2 {
   background: #fbfcfa;
 }
 
+.record-list li.selected-record {
+  border-color: #315b50;
+  background: #f3f8f4;
+}
+
 .record-list strong,
 .record-list span {
   min-width: 0;
@@ -382,6 +387,13 @@ h2 {
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 4px;
+}
+
+.detail-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
 }
 
 .placeholder-panel {
@@ -437,5 +449,9 @@ h2 {
   fieldset {
     grid-template-columns: 1fr;
     padding: 18px;
+  }
+
+  .detail-heading {
+    display: grid;
   }
 }
