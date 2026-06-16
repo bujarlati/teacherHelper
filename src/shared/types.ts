@@ -3,9 +3,22 @@ export type ModelConfig = {
   modelName: string;
 };
 
+export type QdrantConfig = {
+  url: string;
+  apiKey: string;
+  collectionPrefix: string;
+};
+
 export type AppSettings = {
   textModel: ModelConfig;
   videoModel: ModelConfig;
+  embeddingModel: ModelConfig;
+  qdrant: QdrantConfig;
+};
+
+export type KnowledgeConnectionTestResult = {
+  embedding: "ok";
+  qdrant: "ok";
 };
 
 export type LessonPlan = {

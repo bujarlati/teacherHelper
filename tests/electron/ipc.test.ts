@@ -19,7 +19,9 @@ describe("registerSettingsIpcHandlers", () => {
   it("registers settings channels and delegates to the config store", async () => {
     const settings: AppSettings = {
       textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
-      videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" }
+      videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
+      embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      qdrant: { url: "http://localhost:6333", apiKey: "qdrant-key", collectionPrefix: "teacherhelper" }
     };
     const calls: string[] = [];
     const fakeIpcMain = createFakeIpcMain();

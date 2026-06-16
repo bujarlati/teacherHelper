@@ -123,6 +123,51 @@ describe("createSiliconFlowClient", () => {
     );
   });
 
+  it("creates embeddings with POST JSON bearer auth", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: [{ embedding: [0.1, -0.2, 0.3] }]
+      })
+    );
+    const client = createSiliconFlowClient({
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      baseUrl: "https://example.test/v1"
+    });
+
+    await expect(
+      client.createEmbedding({
+        apiKey: "key",
+        modelName: "Qwen/Qwen3-VL-Embedding-8B",
+        input: "一次函数"
+      })
+    ).resolves.toEqual([0.1, -0.2, 0.3]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://example.test/v1/embeddings",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "Content-Type": "application/json",
+          Authorization: "Bearer key"
+        }),
+        body: JSON.stringify({
+          model: "Qwen/Qwen3-VL-Embedding-8B",
+          input: "一次函数",
+          encoding_format: "float"
+        })
+      })
+    );
+  });
+
+  it("rejects invalid embedding responses", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ data: [{ embedding: [] }] }));
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(
+      client.createEmbedding({ apiKey: "key", modelName: "Qwen/Qwen3-VL-Embedding-8B", input: "hello" })
+    ).rejects.toThrow("SiliconFlow returned invalid embedding response");
+  });
+
   it("throws a readable error on non-2xx responses", async () => {
     const fetchMock = vi.fn().mockResolvedValue(errorResponse(401, "unauthorized"));
     const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });

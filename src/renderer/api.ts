@@ -1,5 +1,12 @@
 import type { DemoRecord, LessonRecord, VideoRecord } from "../main/historyStore";
-import type { AppSettings, LessonPlan, ProblemDemoPlan, VideoGenerateInput, VideoTask } from "../shared/types";
+import type {
+  AppSettings,
+  KnowledgeConnectionTestResult,
+  LessonPlan,
+  ProblemDemoPlan,
+  VideoGenerateInput,
+  VideoTask
+} from "../shared/types";
 
 export type LessonGenerateResult = {
   id: string;
@@ -24,6 +31,7 @@ export type TeacherHelperRendererApi = {
   loadSettings(): Promise<AppSettings>;
   saveSettings(settings: AppSettings): Promise<void>;
   clearSettings(): Promise<void>;
+  testKnowledgeConnections(): Promise<KnowledgeConnectionTestResult>;
   generateLesson(topic: string): Promise<LessonGenerateResult>;
   exportLessonDocx(input: { id: string; title: string; lesson: LessonPlan }): Promise<string>;
   generateVideo(input: VideoGenerateInput): Promise<VideoRecord>;
@@ -50,6 +58,7 @@ export const api: TeacherHelperRendererApi = {
   loadSettings: async () => getApi().loadSettings(),
   saveSettings: async (settings) => getApi().saveSettings(settings),
   clearSettings: async () => getApi().clearSettings(),
+  testKnowledgeConnections: async () => getApi().testKnowledgeConnections(),
   generateLesson: async (topic) => getApi().generateLesson(topic),
   exportLessonDocx: async (input) => getApi().exportLessonDocx(input),
   generateVideo: async (input) => getApi().generateVideo(input),

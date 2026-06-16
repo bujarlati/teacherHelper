@@ -21,12 +21,16 @@ describe("createConfigStore", () => {
 
     await store.save({
       textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
-      videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" }
+      videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
+      embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      qdrant: { url: "http://localhost:6333", apiKey: "qdrant-key", collectionPrefix: "teacherhelper" }
     });
 
     await expect(store.load()).resolves.toEqual({
       textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
-      videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" }
+      videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
+      embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      qdrant: { url: "http://localhost:6333", apiKey: "qdrant-key", collectionPrefix: "teacherhelper" }
     });
   });
 
@@ -36,7 +40,29 @@ describe("createConfigStore", () => {
 
     await expect(store.load()).resolves.toEqual({
       textModel: { apiKey: "", modelName: "" },
-      videoModel: { apiKey: "", modelName: "" }
+      videoModel: { apiKey: "", modelName: "" },
+      embeddingModel: { apiKey: "", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      qdrant: { url: "http://localhost:6333", apiKey: "", collectionPrefix: "teacherhelper" }
+    });
+  });
+
+  it("loads older settings files with default knowledge configuration", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "teacherhelper-config-"));
+    const store = createConfigStore(tempDir);
+    await writeFile(
+      join(tempDir, "settings.json"),
+      JSON.stringify({
+        textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
+        videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" }
+      }),
+      "utf-8"
+    );
+
+    await expect(store.load()).resolves.toEqual({
+      textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
+      videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
+      embeddingModel: { apiKey: "", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      qdrant: { url: "http://localhost:6333", apiKey: "", collectionPrefix: "teacherhelper" }
     });
   });
 
@@ -77,13 +103,17 @@ describe("createConfigStore", () => {
 
     await store.save({
       textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
-      videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" }
+      videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
+      embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      qdrant: { url: "http://localhost:6333", apiKey: "qdrant-key", collectionPrefix: "teacherhelper" }
     });
     await store.clear();
 
     await expect(store.load()).resolves.toEqual({
       textModel: { apiKey: "", modelName: "" },
-      videoModel: { apiKey: "", modelName: "" }
+      videoModel: { apiKey: "", modelName: "" },
+      embeddingModel: { apiKey: "", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      qdrant: { url: "http://localhost:6333", apiKey: "", collectionPrefix: "teacherhelper" }
     });
   });
 
@@ -96,7 +126,9 @@ describe("createConfigStore", () => {
 
     await expect(store.load()).resolves.toEqual({
       textModel: { apiKey: "", modelName: "" },
-      videoModel: { apiKey: "", modelName: "" }
+      videoModel: { apiKey: "", modelName: "" },
+      embeddingModel: { apiKey: "", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      qdrant: { url: "http://localhost:6333", apiKey: "", collectionPrefix: "teacherhelper" }
     });
   });
 });

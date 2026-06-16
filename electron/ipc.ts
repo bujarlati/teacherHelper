@@ -8,8 +8,10 @@ import { renderEquationDemoHtml } from "../src/main/demo/renderEquationDemo.js";
 import { renderMotionDemoHtml } from "../src/main/demo/renderMotionDemo.js";
 import { renderSimpleDemoHtml } from "../src/main/demo/renderSimpleDemo.js";
 import { createHistoryStore } from "../src/main/historyStore.js";
+import { testKnowledgeConnections } from "../src/main/knowledgeConnectionService.js";
 import { generateLessonPlan } from "../src/main/lessonService.js";
 import { getAppDataDir } from "../src/main/paths.js";
+import { createQdrantClient } from "../src/main/qdrantClient.js";
 import { createSiliconFlowClient } from "../src/main/siliconflowClient.js";
 import { createStandaloneVideoTask, createVideoTaskFromLesson, refreshVideoTaskStatus } from "../src/main/videoWorkflow.js";
 import { registerSettingsIpcHandlers } from "./settingsIpc.js";
@@ -20,6 +22,7 @@ export function registerIpcHandlers(): void {
   const configStore = createConfigStore(dataDir);
   const historyStore = createHistoryStore(dataDir);
   const client = createSiliconFlowClient();
+  const qdrantClient = createQdrantClient();
 
   registerSettingsIpcHandlers(ipcMain, configStore);
   registerWorkflowIpcHandlers(ipcMain, {
@@ -27,8 +30,10 @@ export function registerIpcHandlers(): void {
     historyStore,
     dataDir,
     client,
+    qdrantClient,
     createId: randomUUID,
     now: () => new Date().toISOString(),
+    testKnowledgeConnections,
     generateLessonPlan,
     createVideoTaskFromLesson,
     createStandaloneVideoTask,

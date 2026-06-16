@@ -89,7 +89,9 @@ function createBaseDeps(overrides: Record<string, unknown> = {}) {
 
 const completeSettings: AppSettings = {
   textModel: { apiKey: "text-key", modelName: "text-model" },
-  videoModel: { apiKey: "video-key", modelName: "video-model" }
+  videoModel: { apiKey: "video-key", modelName: "video-model" },
+  embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+  qdrant: { url: "http://localhost:6333", apiKey: "qdrant-key", collectionPrefix: "teacherhelper" }
 };
 
 const lesson: LessonPlan = {
@@ -634,6 +636,28 @@ describe("registerWorkflowIpcHandlers", () => {
       now: deps.now
     });
     expect(upsertVideo).toHaveBeenCalledWith(refreshedVideo);
+  });
+
+  it("tests knowledge connections using current settings", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const qdrantClient = {};
+    const testKnowledgeConnections = vi.fn().mockResolvedValue({ embedding: "ok", qdrant: "ok" });
+    const deps = createBaseDeps({
+      qdrantClient,
+      testKnowledgeConnections
+    });
+
+    registerWorkflowIpcHandlers(fakeIpcMain, deps);
+
+    await expect(fakeIpcMain.handlers.get("knowledge:testConnections")?.({})).resolves.toEqual({
+      embedding: "ok",
+      qdrant: "ok"
+    });
+    expect(testKnowledgeConnections).toHaveBeenCalledWith({
+      settings: completeSettings,
+      embeddingClient: deps.client,
+      qdrantClient
+    });
   });
 
   it("rejects refresh for an unknown video task without calling the provider", async () => {

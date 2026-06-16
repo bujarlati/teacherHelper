@@ -1,11 +1,19 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { AppSettings, LessonPlan, ProblemDemoPlan, VideoGenerateInput, VideoTask } from "../src/shared/types.js";
+import type {
+  AppSettings,
+  KnowledgeConnectionTestResult,
+  LessonPlan,
+  ProblemDemoPlan,
+  VideoGenerateInput,
+  VideoTask
+} from "../src/shared/types.js";
 import type { DemoRecord, LessonRecord, VideoRecord } from "../src/main/historyStore.js";
 
 export type TeacherHelperApi = {
   loadSettings(): Promise<AppSettings>;
   saveSettings(settings: AppSettings): Promise<void>;
   clearSettings(): Promise<void>;
+  testKnowledgeConnections(): Promise<KnowledgeConnectionTestResult>;
   generateLesson(topic: string): Promise<{ id: string; lesson: LessonPlan; videoTask?: VideoTask; videoError?: string }>;
   exportLessonDocx(input: { id: string; title: string; lesson: LessonPlan }): Promise<string>;
   generateVideo(input: VideoGenerateInput): Promise<VideoRecord>;
@@ -18,6 +26,7 @@ const teacherHelperApi: TeacherHelperApi = {
   loadSettings: () => ipcRenderer.invoke("settings:load") as Promise<AppSettings>,
   saveSettings: (settings) => ipcRenderer.invoke("settings:save", settings) as Promise<void>,
   clearSettings: () => ipcRenderer.invoke("settings:clear") as Promise<void>,
+  testKnowledgeConnections: () => ipcRenderer.invoke("knowledge:testConnections") as Promise<KnowledgeConnectionTestResult>,
   generateLesson: (topic) => ipcRenderer.invoke("lesson:generate", topic) as Promise<{
     id: string;
     lesson: LessonPlan;

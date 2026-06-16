@@ -1,12 +1,23 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { appSettingsSchema } from "../shared/schemas.js";
+import {
+  appSettingsSchema,
+  defaultEmbeddingModelName,
+  defaultQdrantCollectionPrefix,
+  defaultQdrantUrl
+} from "../shared/schemas.js";
 import type { AppSettings } from "../shared/types.js";
 
 function createEmptySettings(): AppSettings {
   return {
     textModel: { apiKey: "", modelName: "" },
-    videoModel: { apiKey: "", modelName: "" }
+    videoModel: { apiKey: "", modelName: "" },
+    embeddingModel: { apiKey: "", modelName: defaultEmbeddingModelName },
+    qdrant: {
+      url: defaultQdrantUrl,
+      apiKey: "",
+      collectionPrefix: defaultQdrantCollectionPrefix
+    }
   };
 }
 

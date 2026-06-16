@@ -5,9 +5,28 @@ export const modelConfigSchema = z.object({
   modelName: z.string()
 });
 
+export const defaultEmbeddingModelName = "Qwen/Qwen3-VL-Embedding-8B";
+export const defaultQdrantUrl = "http://localhost:6333";
+export const defaultQdrantCollectionPrefix = "teacherhelper";
+
+export const qdrantConfigSchema = z.object({
+  url: z.string(),
+  apiKey: z.string(),
+  collectionPrefix: z.string()
+});
+
 export const appSettingsSchema = z.object({
   textModel: modelConfigSchema,
-  videoModel: modelConfigSchema
+  videoModel: modelConfigSchema,
+  embeddingModel: modelConfigSchema.default({
+    apiKey: "",
+    modelName: defaultEmbeddingModelName
+  }),
+  qdrant: qdrantConfigSchema.default({
+    url: defaultQdrantUrl,
+    apiKey: "",
+    collectionPrefix: defaultQdrantCollectionPrefix
+  })
 });
 
 export const lessonPlanSchema = z.object({

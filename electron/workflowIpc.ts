@@ -2,8 +2,9 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { lessonPlanSchema } from "../src/shared/schemas.js";
-import type { AppSettings, LessonPlan, ProblemDemoPlan } from "../src/shared/types.js";
+import type { AppSettings, KnowledgeConnectionTestResult, LessonPlan, ProblemDemoPlan } from "../src/shared/types.js";
 import type { DemoRecord, LessonRecord, VideoRecord } from "../src/main/historyStore.js";
+import type { EmbeddingClientLike, QdrantClientLike } from "../src/main/knowledgeConnectionService.js";
 import type { IpcMainLike } from "./settingsIpc.js";
 
 type DemoServer = {
@@ -29,8 +30,14 @@ type WorkflowDeps = {
   historyStore: HistoryStoreLike;
   dataDir: string;
   client: unknown;
+  qdrantClient?: QdrantClientLike;
   createId(): string;
   now(): string;
+  testKnowledgeConnections?(input: {
+    settings: AppSettings;
+    embeddingClient: EmbeddingClientLike;
+    qdrantClient: QdrantClientLike;
+  }): Promise<KnowledgeConnectionTestResult>;
   generateLessonPlan(input: { topic: string; config: AppSettings["textModel"]; client: unknown }): Promise<LessonPlan>;
   createVideoTaskFromLesson(input: {
     lessonId: string;
@@ -189,6 +196,20 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
     await deps.historyStore.upsertVideo(updatedVideo);
 
     return updatedVideo;
+  });
+
+  ipcMainLike.handle("knowledge:testConnections", async () => {
+    if (!deps.testKnowledgeConnections || !deps.qdrantClient) {
+      throw new Error("知识库连接测试服务未初始化。");
+    }
+
+    const settings = await deps.configStore.load();
+
+    return deps.testKnowledgeConnections({
+      settings,
+      embeddingClient: deps.client as EmbeddingClientLike,
+      qdrantClient: deps.qdrantClient
+    });
   });
 
   ipcMainLike.handle("history:list", async () => ({

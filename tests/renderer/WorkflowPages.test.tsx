@@ -51,6 +51,7 @@ describe("workflow pages", () => {
         loadSettings: vi.fn(),
         saveSettings: vi.fn(),
         clearSettings: vi.fn(),
+        testKnowledgeConnections: vi.fn(),
         generateLesson: vi.fn().mockResolvedValue({ id: "lesson-1", lesson, videoTask }),
         exportLessonDocx: vi.fn().mockResolvedValue("D:\\teacherHelper-data\\exports\\一次函数复习.docx"),
         generateVideo: vi.fn(),

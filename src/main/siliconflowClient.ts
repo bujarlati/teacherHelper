@@ -36,6 +36,13 @@ type ChatCompletionInput = {
   thinkingBudget?: number;
 };
 
+type EmbeddingInput = {
+  apiKey: string;
+  modelName: string;
+  input: string;
+  dimensions?: number;
+};
+
 type VideoStatusResult = {
   status: VideoTaskStatus;
   reason?: string;
@@ -109,6 +116,26 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
       }
 
       return content;
+    },
+
+    async createEmbedding(input: EmbeddingInput): Promise<number[]> {
+      const body: Record<string, JsonValue | undefined> = {
+        model: input.modelName,
+        input: input.input,
+        encoding_format: "float",
+        dimensions: input.dimensions
+      };
+
+      const data = await requestJson("/embeddings", input.apiKey, {
+        method: "POST",
+        body: JSON.stringify(body)
+      });
+      const embedding = readNumberArray(data, ["data", 0, "embedding"]);
+      if (!embedding || embedding.length === 0) {
+        throw new Error("SiliconFlow returned invalid embedding response");
+      }
+
+      return embedding;
     },
 
     async listModels(input: { apiKey: string; type?: "text" | "video" }): Promise<Array<{ id: string }>> {
@@ -236,4 +263,23 @@ function readString(value: unknown, path: Array<string | number>): string | unde
   }
 
   return typeof current === "string" ? current : undefined;
+}
+
+function readNumberArray(value: unknown, path: Array<string | number>): number[] | undefined {
+  let current: unknown = value;
+
+  for (const segment of path) {
+    if (typeof segment === "number") {
+      if (!Array.isArray(current)) return undefined;
+      current = current[segment];
+      continue;
+    }
+
+    if (!isRecord(current)) return undefined;
+    current = current[segment];
+  }
+
+  return Array.isArray(current) && current.every((item) => typeof item === "number")
+    ? current
+    : undefined;
 }

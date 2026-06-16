@@ -130,13 +130,34 @@ describe("modelConfigSchema", () => {
 });
 
 describe("appSettingsSchema", () => {
-  it("accepts text and video model groups", () => {
+  it("accepts text, video, embedding, and qdrant setting groups", () => {
+    const parsed = appSettingsSchema.parse({
+      textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
+      videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
+      embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      qdrant: { url: "http://localhost:6333", apiKey: "qdrant-key", collectionPrefix: "teacherhelper" }
+    });
+
+    expect(parsed.videoModel.apiKey).toBe("video-key");
+    expect(parsed.embeddingModel.modelName).toBe("Qwen/Qwen3-VL-Embedding-8B");
+    expect(parsed.qdrant.collectionPrefix).toBe("teacherhelper");
+  });
+
+  it("fills knowledge defaults for older settings files", () => {
     const parsed = appSettingsSchema.parse({
       textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
       videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" }
     });
 
-    expect(parsed.videoModel.apiKey).toBe("video-key");
+    expect(parsed.embeddingModel).toEqual({
+      apiKey: "",
+      modelName: "Qwen/Qwen3-VL-Embedding-8B"
+    });
+    expect(parsed.qdrant).toEqual({
+      url: "http://localhost:6333",
+      apiKey: "",
+      collectionPrefix: "teacherhelper"
+    });
   });
 });
 
