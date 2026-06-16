@@ -140,13 +140,13 @@ describe("workflow pages", () => {
     expect(screen.getByText("已等待 6 秒")).toBeTruthy();
 
     await vi.advanceTimersByTimeAsync(54000);
-    expect(screen.getByText("模型仍在生成，可能是网络或模型排队较慢。")).toBeTruthy();
+    expect(screen.getByText("模型仍在生成，GLM 等推理模型生成完整教案可能需要 2 到 5 分钟。")).toBeTruthy();
     vi.useRealTimers();
   });
 
   test("LessonPage hides progress and shows the failure reason when generation fails", async () => {
     window.teacherHelper.generateLesson = vi.fn().mockRejectedValue(
-      new Error("硅基流动请求超时，请检查网络、API Key、模型名或稍后重试。")
+      new Error("硅基流动请求超时，请检查网络、API Key、模型名，或换用响应更快的文本模型后重试。")
     );
     const { LessonPage } = await import("../../src/renderer/pages/LessonPage");
 
@@ -155,7 +155,7 @@ describe("workflow pages", () => {
     fireEvent.change(screen.getByLabelText("课题"), { target: { value: "一次函数" } });
     fireEvent.click(screen.getByRole("button", { name: "生成教案" }));
 
-    expect(await screen.findByText("硅基流动请求超时，请检查网络、API Key、模型名或稍后重试。")).toBeTruthy();
+    expect(await screen.findByText("硅基流动请求超时，请检查网络、API Key、模型名，或换用响应更快的文本模型后重试。")).toBeTruthy();
     expect(screen.queryByRole("progressbar", { name: "教案生成进度" })).toBeNull();
     expect((screen.getByRole("button", { name: "生成教案" }) as HTMLButtonElement).disabled).toBe(false);
   });

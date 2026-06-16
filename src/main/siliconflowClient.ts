@@ -47,7 +47,7 @@ type VideoStatusResult = {
 export function createSiliconFlowClient(options: ClientOptions = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const baseUrl = (options.baseUrl ?? "https://api.siliconflow.cn/v1").replace(/\/$/, "");
-  const timeoutMs = options.timeoutMs ?? 120_000;
+  const timeoutMs = options.timeoutMs ?? 300_000;
 
   async function requestJson(path: string, apiKey: string, init: RequestInit): Promise<unknown> {
     const controller = new AbortController();
@@ -78,7 +78,7 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
       }
     } catch (error) {
       if (controller.signal.aborted) {
-        throw new Error("硅基流动请求超时，请检查网络、API Key、模型名或稍后重试。");
+        throw new Error("硅基流动请求超时，请检查网络、API Key、模型名，或换用响应更快的文本模型后重试。");
       }
 
       throw error;

@@ -162,7 +162,7 @@ export function LessonPage(): ReactElement {
             <span style={{ width: `${generationProgress.percent}%` }} />
           </div>
           {generationProgress.isSlow ? (
-            <p>模型仍在生成，可能是网络或模型排队较慢。</p>
+            <p>模型仍在生成，GLM 等推理模型生成完整教案可能需要 2 到 5 分钟。</p>
           ) : null}
         </section>
       ) : null}

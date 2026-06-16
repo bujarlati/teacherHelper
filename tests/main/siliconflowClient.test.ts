@@ -138,7 +138,39 @@ describe("createSiliconFlowClient", () => {
     const error = await request;
 
     expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toBe("硅基流动请求超时，请检查网络、API Key、模型名或稍后重试。");
+    expect((error as Error).message).toBe("硅基流动请求超时，请检查网络、API Key、模型名，或换用响应更快的文本模型后重试。");
+    expect(observedSignal?.aborted).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it("keeps the default chat request alive beyond two minutes for slow reasoning models", async () => {
+    vi.useFakeTimers();
+    let observedSignal: AbortSignal | undefined;
+    const fetchMock = vi.fn((_url: string | URL | Request, init?: RequestInit) => {
+      observedSignal = init?.signal ?? undefined;
+
+      return new Promise<Response>((_resolve, reject) => {
+        observedSignal?.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      });
+    });
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    const request = client.chatCompletion({
+      apiKey: "key",
+      modelName: "Pro/zai-org/GLM-5.1",
+      messages: [{ role: "user", content: "hello" }]
+    }).catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(observedSignal?.aborted).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(180_000);
+    const error = await request;
+
+    expect(error).toBeInstanceOf(Error);
     expect(observedSignal?.aborted).toBe(true);
     vi.useRealTimers();
   });
