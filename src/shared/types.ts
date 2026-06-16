@@ -118,12 +118,22 @@ export type TextbookIndexItem = {
   pageNumber: number;
   imageDataUrl: string;
   cropRect?: TextbookCropRect;
+  sourceName?: string;
+  sourcePageNumber?: number;
+};
+
+export type TextbookSource = {
+  name: string;
+  pageCount: number;
+  itemCount: number;
 };
 
 export type TextbookRecord = {
   id: string;
   title: string;
   sourceName: string;
+  sourceNames?: string[];
+  sources?: TextbookSource[];
   collectionName: string;
   pageCount: number;
   itemCount: number;
@@ -140,6 +150,7 @@ export type TextbookSearchResult = {
   title: string;
   sourceName: string;
   pageNumber: number;
+  sourcePageNumber?: number;
   kind: TextbookImageKind;
   imagePath: string;
   cropRect?: TextbookCropRect;

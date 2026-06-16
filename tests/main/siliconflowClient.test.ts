@@ -25,6 +25,12 @@ function errorResponse(status: number, body: string): Response {
   } as Response;
 }
 
+function fetchResetError(): TypeError {
+  return Object.assign(new TypeError("fetch failed"), {
+    cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" })
+  });
+}
+
 describe("createSiliconFlowClient", () => {
   it("calls chat completions with POST JSON bearer auth and optional generation controls", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
@@ -159,6 +165,38 @@ describe("createSiliconFlowClient", () => {
     );
   });
 
+  it("creates image embeddings with VL image content objects", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: [{ embedding: [0.4, 0.5, 0.6] }]
+      })
+    );
+    const client = createSiliconFlowClient({
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      baseUrl: "https://example.test/v1"
+    });
+
+    await expect(
+      client.createEmbedding({
+        apiKey: "key",
+        modelName: "Qwen/Qwen3-VL-Embedding-8B",
+        input: { image: "data:image/png;base64,AAA" }
+      })
+    ).resolves.toEqual([0.4, 0.5, 0.6]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://example.test/v1/embeddings",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          model: "Qwen/Qwen3-VL-Embedding-8B",
+          input: { image: "data:image/png;base64,AAA" },
+          encoding_format: "float"
+        })
+      })
+    );
+  });
+
   it("rejects invalid embedding responses", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ data: [{ embedding: [] }] }));
     const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
@@ -166,6 +204,34 @@ describe("createSiliconFlowClient", () => {
     await expect(
       client.createEmbedding({ apiKey: "key", modelName: "Qwen/Qwen3-VL-Embedding-8B", input: "hello" })
     ).rejects.toThrow("SiliconFlow returned invalid embedding response");
+  });
+
+  it("retries transient network resets before returning an embedding", async () => {
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(fetchResetError())
+      .mockResolvedValueOnce(jsonResponse({ data: [{ embedding: [0.1, 0.2] }] }));
+    const client = createSiliconFlowClient({
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      retryDelayMs: 0
+    });
+
+    await expect(
+      client.createEmbedding({ apiKey: "key", modelName: "Qwen/Qwen3-VL-Embedding-8B", input: { image: "data:image/png;base64,AAA" } })
+    ).resolves.toEqual([0.1, 0.2]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("throws a readable message after repeated transient network failures", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(fetchResetError());
+    const client = createSiliconFlowClient({
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      retryDelayMs: 0
+    });
+
+    await expect(
+      client.createEmbedding({ apiKey: "key", modelName: "Qwen/Qwen3-VL-Embedding-8B", input: { image: "data:image/png;base64,AAA" } })
+    ).rejects.toThrow("SiliconFlow 网络请求中断");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("throws a readable error on non-2xx responses", async () => {

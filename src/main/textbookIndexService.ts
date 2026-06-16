@@ -6,11 +6,13 @@ import type {
   TextbookImageKind,
   TextbookIndexItem,
   TextbookRecord,
-  TextbookSearchResult
+  TextbookSearchResult,
+  TextbookSource
 } from "../shared/types.js";
+import type { EmbeddingContent } from "./siliconflowClient.js";
 
 type EmbeddingClientLike = {
-  createEmbedding(input: { apiKey: string; modelName: string; input: string }): Promise<number[]>;
+  createEmbedding(input: { apiKey: string; modelName: string; input: EmbeddingContent }): Promise<number[]>;
 };
 
 type QdrantClientLike = {
@@ -45,7 +47,8 @@ type TextbookStoreLike = {
 type IndexTextbookInput = {
   id: string;
   title: string;
-  sourceName: string;
+  sourceName?: string;
+  sourceNames?: string[];
   items: TextbookIndexItem[];
   settings: AppSettings;
   embeddingClient: EmbeddingClientLike;
@@ -56,37 +59,57 @@ type IndexTextbookInput = {
   createPointId(): string;
 };
 
+type SourceStat = {
+  name: string;
+  pages: Set<number>;
+  itemCount: number;
+};
+
+const upsertBatchSize = 24;
+
 export async function indexTextbook(input: IndexTextbookInput): Promise<TextbookRecord> {
   if (input.items.length === 0) {
-    throw new Error("教材索引至少需要一页图片。");
+    throw new Error("Textbook index requires at least one page image.");
   }
 
   const collectionName = createTextbookCollectionName(input.settings.qdrant.collectionPrefix);
   const createdAt = input.now();
-  const pageNumbers = new Set(input.items.map((item) => item.pageNumber));
+  const sourceDirectories = shouldUseSourceDirectories(input);
+  const sourceStats = createInitialSourceStats(input);
   const savedItems: Array<{
     item: TextbookIndexItem;
+    sourceName: string;
+    sourcePageNumber: number;
     imagePath: string;
     vector: number[];
   }> = [];
   let cropIndex = 0;
 
   for (const item of input.items) {
-    const imagePath = item.kind === "page"
-      ? join(input.dataDir, "textbooks", input.id, "pages", `page-${formatPageNumber(item.pageNumber)}.png`)
-      : join(input.dataDir, "textbooks", input.id, "crops", `page-${formatPageNumber(item.pageNumber)}-crop-${formatPageNumber(++cropIndex)}.png`);
+    const sourceName = resolveItemSourceName(item, input);
+    const sourcePageNumber = item.sourcePageNumber ?? item.pageNumber;
+    const imagePath = createImagePath({
+      dataDir: input.dataDir,
+      textbookId: input.id,
+      item,
+      sourceName,
+      sourcePageNumber,
+      cropIndex: item.kind === "crop" ? ++cropIndex : cropIndex,
+      sourceDirectories
+    });
     await writeDataUrlImage(imagePath, item.imageDataUrl);
     const vector = await input.embeddingClient.createEmbedding({
       apiKey: input.settings.embeddingModel.apiKey,
       modelName: input.settings.embeddingModel.modelName,
-      input: item.imageDataUrl
+      input: { image: item.imageDataUrl }
     });
-    savedItems.push({ item, imagePath, vector });
+    addSourceStat(sourceStats, sourceName, sourcePageNumber, item);
+    savedItems.push({ item, sourceName, sourcePageNumber, imagePath, vector });
   }
 
   const vectorSize = savedItems[0]?.vector.length ?? 0;
   if (vectorSize === 0) {
-    throw new Error("嵌入模型返回了空向量。");
+    throw new Error("Embedding model returned an empty vector.");
   }
 
   await input.qdrantClient.ensureCollection({
@@ -95,31 +118,39 @@ export async function indexTextbook(input: IndexTextbookInput): Promise<Textbook
     collectionName,
     vectorSize
   });
-  await input.qdrantClient.upsertPoints({
-    url: input.settings.qdrant.url,
-    apiKey: input.settings.qdrant.apiKey,
-    collectionName,
-    points: savedItems.map(({ item, imagePath, vector }) => ({
+  const points = savedItems.map(({ item, sourceName, sourcePageNumber, imagePath, vector }) => ({
       id: input.createPointId(),
       vector,
       payload: {
         textbookId: input.id,
         title: input.title,
-        sourceName: input.sourceName,
+        sourceName,
         pageNumber: item.pageNumber,
+        sourcePageNumber,
         kind: item.kind,
         imagePath,
         ...(item.cropRect ? { cropRect: item.cropRect } : {})
       }
-    }))
-  });
+    }));
 
+  for (const batch of chunk(points, upsertBatchSize)) {
+    await input.qdrantClient.upsertPoints({
+      url: input.settings.qdrant.url,
+      apiKey: input.settings.qdrant.apiKey,
+      collectionName,
+      points: batch
+    });
+  }
+
+  const sources = sourceStatsToSources(sourceStats);
   const record: TextbookRecord = {
     id: input.id,
     title: input.title,
-    sourceName: input.sourceName,
+    sourceName: sources.map((source) => source.name).join(", "),
+    sourceNames: sources.map((source) => source.name),
+    sources,
     collectionName,
-    pageCount: pageNumbers.size,
+    pageCount: sources.reduce((total, source) => total + source.pageCount, 0),
     itemCount: input.items.length,
     status: "indexed",
     createdAt,
@@ -159,6 +190,7 @@ export async function searchTextbookIndex(input: {
       title: readString(payload.title, "title"),
       sourceName: readString(payload.sourceName, "sourceName"),
       pageNumber: readNumber(payload.pageNumber, "pageNumber"),
+      ...(typeof payload.sourcePageNumber === "number" ? { sourcePageNumber: payload.sourcePageNumber } : {}),
       kind: readKind(payload.kind),
       imagePath: readString(payload.imagePath, "imagePath"),
       ...(isCropRect(payload.cropRect) ? { cropRect: payload.cropRect } : {})
@@ -174,7 +206,7 @@ export function createTextbookCollectionName(prefix: string): string {
 async function writeDataUrlImage(filePath: string, dataUrl: string): Promise<void> {
   const match = /^data:image\/png;base64,(.+)$/u.exec(dataUrl);
   if (!match) {
-    throw new Error("教材图片必须是 PNG data URL。");
+    throw new Error("Textbook image must be a PNG data URL.");
   }
 
   await mkdir(join(filePath, ".."), { recursive: true });
@@ -185,9 +217,98 @@ function formatPageNumber(value: number): string {
   return String(value).padStart(3, "0");
 }
 
+function shouldUseSourceDirectories(input: IndexTextbookInput): boolean {
+  return (input.sourceNames?.length ?? 0) > 1 || input.items.some((item) => !!item.sourceName);
+}
+
+function createImagePath(input: {
+  dataDir: string;
+  textbookId: string;
+  item: TextbookIndexItem;
+  sourceName: string;
+  sourcePageNumber: number;
+  cropIndex: number;
+  sourceDirectories: boolean;
+}): string {
+  const root = input.sourceDirectories
+    ? join(input.dataDir, "textbooks", input.textbookId, "sources", safePathSegment(input.sourceName))
+    : join(input.dataDir, "textbooks", input.textbookId);
+
+  return input.item.kind === "page"
+    ? join(root, "pages", `page-${formatPageNumber(input.sourcePageNumber)}.png`)
+    : join(
+      root,
+      "crops",
+      `page-${formatPageNumber(input.sourcePageNumber)}-crop-${formatPageNumber(input.cropIndex)}.png`
+    );
+}
+
+function resolveItemSourceName(item: TextbookIndexItem, input: IndexTextbookInput): string {
+  const sourceName = item.sourceName ?? input.sourceName ?? input.sourceNames?.[0];
+  if (!sourceName) {
+    throw new Error("Textbook index requires a PDF source name.");
+  }
+
+  return sourceName;
+}
+
+function createInitialSourceStats(input: IndexTextbookInput): Map<string, SourceStat> {
+  const stats = new Map<string, SourceStat>();
+  for (const sourceName of input.sourceNames ?? (input.sourceName ? [input.sourceName] : [])) {
+    ensureSourceStat(stats, sourceName);
+  }
+
+  return stats;
+}
+
+function addSourceStat(
+  stats: Map<string, SourceStat>,
+  sourceName: string,
+  sourcePageNumber: number,
+  item: TextbookIndexItem
+): void {
+  const stat = ensureSourceStat(stats, sourceName);
+  stat.itemCount += 1;
+  if (item.kind === "page") {
+    stat.pages.add(sourcePageNumber);
+  }
+}
+
+function ensureSourceStat(stats: Map<string, SourceStat>, sourceName: string): SourceStat {
+  const existing = stats.get(sourceName);
+  if (existing) {
+    return existing;
+  }
+
+  const stat = { name: sourceName, pages: new Set<number>(), itemCount: 0 };
+  stats.set(sourceName, stat);
+  return stat;
+}
+
+function sourceStatsToSources(stats: Map<string, SourceStat>): TextbookSource[] {
+  return Array.from(stats.values()).map((source) => ({
+    name: source.name,
+    pageCount: source.pages.size,
+    itemCount: source.itemCount
+  }));
+}
+
+function safePathSegment(value: string): string {
+  return value.trim().replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "") || "source";
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const batches: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    batches.push(items.slice(index, index + size));
+  }
+
+  return batches;
+}
+
 function readString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`Qdrant 搜索结果缺少 ${field}。`);
+    throw new Error(`Qdrant search result is missing ${field}.`);
   }
 
   return value;
@@ -195,7 +316,7 @@ function readString(value: unknown, field: string): string {
 
 function readNumber(value: unknown, field: string): number {
   if (typeof value !== "number") {
-    throw new Error(`Qdrant 搜索结果缺少 ${field}。`);
+    throw new Error(`Qdrant search result is missing ${field}.`);
   }
 
   return value;
@@ -203,7 +324,7 @@ function readNumber(value: unknown, field: string): number {
 
 function readKind(value: unknown): TextbookImageKind {
   if (value !== "page" && value !== "crop") {
-    throw new Error("Qdrant 搜索结果缺少 kind。");
+    throw new Error("Qdrant search result is missing kind.");
   }
 
   return value;

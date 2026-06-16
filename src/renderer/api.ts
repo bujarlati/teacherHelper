@@ -37,7 +37,12 @@ export type TeacherHelperRendererApi = {
   clearSettings(): Promise<void>;
   testKnowledgeConnections(): Promise<KnowledgeConnectionTestResult>;
   getQdrantStatus(): Promise<LocalQdrantStatus>;
-  indexTextbook(input: { title: string; sourceName: string; items: TextbookIndexItem[] }): Promise<TextbookRecord>;
+  indexTextbook(input: {
+    title: string;
+    sourceName?: string;
+    sourceNames?: string[];
+    items: TextbookIndexItem[];
+  }): Promise<TextbookRecord>;
   listTextbooks(): Promise<TextbookRecord[]>;
   searchTextbooks(input: { query: string; limit?: number }): Promise<TextbookSearchResult[]>;
   generateLesson(topic: string): Promise<LessonGenerateResult>;

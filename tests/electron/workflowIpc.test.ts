@@ -709,12 +709,19 @@ describe("registerWorkflowIpcHandlers", () => {
     const items: TextbookIndexItem[] = [{
       kind: "page",
       pageNumber: 1,
+      sourceName: "algebra.pdf",
+      sourcePageNumber: 1,
       imageDataUrl: "data:image/png;base64,AAA"
     }];
     const record: TextbookRecord = {
       id: "book-1",
       title: "七年级数学",
-      sourceName: "local.pdf",
+      sourceName: "algebra.pdf, geometry.pdf",
+      sourceNames: ["algebra.pdf", "geometry.pdf"],
+      sources: [
+        { name: "algebra.pdf", pageCount: 1, itemCount: 1 },
+        { name: "geometry.pdf", pageCount: 0, itemCount: 0 }
+      ],
       collectionName: "teacherhelper_textbook_visual",
       pageCount: 1,
       itemCount: 1,
@@ -737,14 +744,14 @@ describe("registerWorkflowIpcHandlers", () => {
 
     await expect(fakeIpcMain.handlers.get("textbook:index")?.({}, {
       title: " 七年级数学 ",
-      sourceName: "local.pdf",
+      sourceNames: ["algebra.pdf", "geometry.pdf"],
       items
     })).resolves.toEqual(record);
     expect(localQdrantManager.ensureRunning).toHaveBeenCalledWith(completeSettings);
     expect(deps.indexTextbook).toHaveBeenCalledWith({
       id: "book-1",
       title: "七年级数学",
-      sourceName: "local.pdf",
+      sourceNames: ["algebra.pdf", "geometry.pdf"],
       items,
       settings: completeSettings,
       embeddingClient: deps.client,

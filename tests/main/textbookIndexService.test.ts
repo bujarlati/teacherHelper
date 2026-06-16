@@ -76,7 +76,7 @@ describe("textbookIndexService", () => {
     expect(embeddingClient.createEmbedding).toHaveBeenCalledWith({
       apiKey: "embedding-key",
       modelName: "Qwen/Qwen3-VL-Embedding-8B",
-      input: pngDataUrl
+      input: { image: pngDataUrl }
     });
     expect(qdrantClient.ensureCollection).toHaveBeenCalledWith({
       url: "http://127.0.0.1:6333",
@@ -112,6 +112,128 @@ describe("textbookIndexService", () => {
       ])
     });
     expect(textbookStore.upsert).toHaveBeenCalledWith(record);
+  });
+
+  it("records one textbook library with multiple PDF sources", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "teacherhelper-index-"));
+    const items: TextbookIndexItem[] = [
+      { kind: "page", pageNumber: 1, sourceName: "algebra.pdf", sourcePageNumber: 1, imageDataUrl: pngDataUrl },
+      { kind: "page", pageNumber: 2, sourceName: "geometry.pdf", sourcePageNumber: 1, imageDataUrl: pngDataUrl },
+      {
+        kind: "crop",
+        pageNumber: 2,
+        sourceName: "geometry.pdf",
+        sourcePageNumber: 1,
+        imageDataUrl: pngDataUrl,
+        cropRect: { x: 0, y: 0, width: 320, height: 240 }
+      }
+    ];
+    const embeddingClient = {
+      createEmbedding: vi.fn()
+        .mockResolvedValueOnce([0.1, 0.2])
+        .mockResolvedValueOnce([0.3, 0.4])
+        .mockResolvedValueOnce([0.5, 0.6])
+    };
+    const qdrantClient = {
+      ensureCollection: vi.fn().mockResolvedValue(undefined),
+      upsertPoints: vi.fn().mockResolvedValue(undefined)
+    };
+    const textbookStore = {
+      upsert: vi.fn().mockResolvedValue(undefined)
+    };
+
+    const record = await indexTextbook({
+      id: "library-1",
+      title: "Grade 7 library",
+      sourceNames: ["algebra.pdf", "geometry.pdf"],
+      items,
+      settings,
+      embeddingClient,
+      qdrantClient,
+      textbookStore,
+      dataDir: tempDir,
+      now: () => "2026-06-15T03:04:05.000Z",
+      createPointId: vi.fn()
+        .mockReturnValueOnce("point-algebra-page")
+        .mockReturnValueOnce("point-geometry-page")
+        .mockReturnValueOnce("point-geometry-crop")
+    });
+
+    expect(record).toMatchObject({
+      id: "library-1",
+      title: "Grade 7 library",
+      sourceName: "algebra.pdf, geometry.pdf",
+      sourceNames: ["algebra.pdf", "geometry.pdf"],
+      sources: [
+        { name: "algebra.pdf", pageCount: 1, itemCount: 1 },
+        { name: "geometry.pdf", pageCount: 1, itemCount: 2 }
+      ],
+      pageCount: 2,
+      itemCount: 3,
+      status: "indexed"
+    });
+    expect(qdrantClient.upsertPoints).toHaveBeenCalledWith(expect.objectContaining({
+      points: expect.arrayContaining([
+        expect.objectContaining({
+          id: "point-geometry-page",
+          payload: expect.objectContaining({
+            textbookId: "library-1",
+            sourceName: "geometry.pdf",
+            sourcePageNumber: 1,
+            pageNumber: 2
+          })
+        })
+      ])
+    }));
+    await expect(readFile(join(tempDir, "textbooks", "library-1", "sources", "geometry_pdf", "pages", "page-001.png"))).resolves.toEqual(
+      Buffer.from("png-bytes")
+    );
+  });
+
+  it("upserts large textbook indexes in batches", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "teacherhelper-index-"));
+    const items: TextbookIndexItem[] = Array.from({ length: 25 }, (_, index) => ({
+      kind: "page",
+      pageNumber: index + 1,
+      imageDataUrl: pngDataUrl
+    }));
+    const embeddingClient = {
+      createEmbedding: vi.fn().mockResolvedValue([0.1, 0.2, 0.3])
+    };
+    const qdrantClient = {
+      ensureCollection: vi.fn().mockResolvedValue(undefined),
+      upsertPoints: vi.fn().mockResolvedValue(undefined)
+    };
+    const textbookStore = {
+      upsert: vi.fn().mockResolvedValue(undefined)
+    };
+    let pointIndex = 0;
+    const createPointId = vi.fn(() => `point-${++pointIndex}`);
+
+    await indexTextbook({
+      id: "large-book",
+      title: "Large textbook",
+      sourceName: "large.pdf",
+      items,
+      settings,
+      embeddingClient,
+      qdrantClient,
+      textbookStore,
+      dataDir: tempDir,
+      now: () => "2026-06-15T03:04:05.000Z",
+      createPointId
+    });
+
+    expect(qdrantClient.upsertPoints).toHaveBeenCalledTimes(2);
+    expect(qdrantClient.upsertPoints).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      points: expect.arrayContaining([
+        expect.objectContaining({ id: "point-1" }),
+        expect.objectContaining({ id: "point-24" })
+      ])
+    }));
+    expect(qdrantClient.upsertPoints).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      points: [expect.objectContaining({ id: "point-25" })]
+    }));
   });
 
   it("searches textbook vectors from a Chinese question", async () => {

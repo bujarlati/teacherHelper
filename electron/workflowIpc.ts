@@ -116,7 +116,8 @@ type WorkflowDeps = {
   indexTextbook?(input: {
     id: string;
     title: string;
-    sourceName: string;
+    sourceName?: string;
+    sourceNames?: string[];
     items: TextbookIndexItem[];
     settings: AppSettings;
     embeddingClient: EmbeddingClientLike;
@@ -154,6 +155,8 @@ const textbookIndexItemSchema = z.object({
   kind: z.enum(["page", "crop"]),
   pageNumber: z.number().int().positive(),
   imageDataUrl: z.string().trim().min(1),
+  sourceName: nonEmptyStringSchema.optional(),
+  sourcePageNumber: z.number().int().positive().optional(),
   cropRect: z.object({
     x: z.number(),
     y: z.number(),
@@ -163,8 +166,17 @@ const textbookIndexItemSchema = z.object({
 });
 const textbookIndexInputSchema = z.object({
   title: nonEmptyStringSchema,
-  sourceName: nonEmptyStringSchema,
+  sourceName: nonEmptyStringSchema.optional(),
+  sourceNames: z.array(nonEmptyStringSchema).min(1).optional(),
   items: z.array(textbookIndexItemSchema).min(1)
+}).superRefine((value, ctx) => {
+  if (!value.sourceName && !value.sourceNames?.length) {
+    ctx.addIssue({
+      code: "custom",
+      message: "textbook index requires at least one PDF source name",
+      path: ["sourceNames"]
+    });
+  }
 });
 const textbookSearchInputSchema = z.object({
   query: nonEmptyStringSchema,
@@ -318,7 +330,8 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
     return deps.indexTextbook({
       id: deps.createId(),
       title: parsed.title,
-      sourceName: parsed.sourceName,
+      ...(parsed.sourceName ? { sourceName: parsed.sourceName } : {}),
+      ...(parsed.sourceNames ? { sourceNames: parsed.sourceNames } : {}),
       items: parsed.items,
       settings,
       embeddingClient: deps.client as EmbeddingClientLike,

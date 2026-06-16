@@ -244,6 +244,61 @@ describe("workflow pages", () => {
     expect(await screen.findByText("第 2 页 · page · 相似度 0.91")).toBeTruthy();
   });
 
+  test("TextbookPage indexes multiple PDFs as one textbook library", async () => {
+    const renderPdfFileToIndexItems = vi.fn(async () => [{
+      kind: "page" as const,
+      pageNumber: 1,
+      imageDataUrl: "data:image/png;base64,AAA"
+    }]);
+    vi.doMock("../../src/renderer/pdfRenderer", () => ({
+      renderPdfFileToIndexItems
+    }));
+    window.teacherHelper.indexTextbook = vi.fn().mockResolvedValue({
+      ...textbook,
+      id: "library-1",
+      title: "Middle school library",
+      sourceName: "algebra.pdf, geometry.pdf",
+      sourceNames: ["algebra.pdf", "geometry.pdf"],
+      sources: [
+        { name: "algebra.pdf", pageCount: 1, itemCount: 1 },
+        { name: "geometry.pdf", pageCount: 1, itemCount: 1 }
+      ],
+      pageCount: 2,
+      itemCount: 2
+    });
+    const { TextbookPage } = await import("../../src/renderer/pages/TextbookPage");
+
+    const { container } = render(<TextbookPage />);
+    const inputs = container.querySelectorAll("input");
+    const fileInput = inputs[0] as HTMLInputElement;
+    const titleInput = inputs[1] as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: {
+        files: [
+          new File(["a"], "algebra.pdf", { type: "application/pdf" }),
+          new File(["b"], "geometry.pdf", { type: "application/pdf" })
+        ]
+      }
+    });
+    fireEvent.change(titleInput, { target: { value: "Middle school library" } });
+    fireEvent.submit(container.querySelector("form") as HTMLFormElement);
+
+    await waitFor(() => {
+      expect(window.teacherHelper.indexTextbook).toHaveBeenCalledWith({
+        title: "Middle school library",
+        sourceNames: ["algebra.pdf", "geometry.pdf"],
+        items: [
+          expect.objectContaining({ pageNumber: 1, sourceName: "algebra.pdf", sourcePageNumber: 1 }),
+          expect.objectContaining({ pageNumber: 2, sourceName: "geometry.pdf", sourcePageNumber: 1 })
+        ]
+      });
+    });
+    expect(renderPdfFileToIndexItems).toHaveBeenCalledTimes(2);
+    expect((await screen.findAllByText("Middle school library")).length).toBeGreaterThan(0);
+    expect(screen.getByText("algebra.pdf")).toBeTruthy();
+    expect(screen.getByText("geometry.pdf")).toBeTruthy();
+  });
+
   test("VideoPage submits an image-to-video task and refreshes its status", async () => {
     const queuedVideo: VideoRecord = {
       id: "video-standalone-1",

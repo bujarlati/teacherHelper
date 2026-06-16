@@ -15,6 +15,7 @@ type ClientOptions = {
   fetchImpl?: FetchImpl;
   baseUrl?: string;
   timeoutMs?: number;
+  retryDelayMs?: number;
 };
 
 type ChatMessage = {
@@ -25,6 +26,12 @@ type ChatMessage = {
 type ResponseFormat = {
   type: "json_object";
 };
+
+export type EmbeddingContent =
+  | string
+  | { text: string }
+  | { image: string }
+  | Array<string | { text: string } | { image: string }>;
 
 type ChatCompletionInput = {
   apiKey: string;
@@ -39,7 +46,7 @@ type ChatCompletionInput = {
 type EmbeddingInput = {
   apiKey: string;
   modelName: string;
-  input: string;
+  input: EmbeddingContent;
   dimensions?: number;
 };
 
@@ -55,8 +62,33 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const baseUrl = (options.baseUrl ?? "https://api.siliconflow.cn/v1").replace(/\/$/, "");
   const timeoutMs = options.timeoutMs ?? 300_000;
+  const retryDelayMs = options.retryDelayMs ?? 750;
+  const maxAttempts = 3;
 
   async function requestJson(path: string, apiKey: string, init: RequestInit): Promise<unknown> {
+    let lastNetworkError: unknown;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        return await requestJsonOnce(path, apiKey, init);
+      } catch (error) {
+        if (!isTransientNetworkError(error) || attempt === maxAttempts) {
+          if (isTransientNetworkError(error)) {
+            throw new Error(`SiliconFlow 网络请求中断，请稍后重试或检查网络/代理连接。原始错误：${getErrorMessage(error)}`);
+          }
+
+          throw error;
+        }
+
+        lastNetworkError = error;
+        await delay(retryDelayMs * attempt);
+      }
+    }
+
+    throw new Error(`SiliconFlow 网络请求中断，请稍后重试或检查网络/代理连接。原始错误：${getErrorMessage(lastNetworkError)}`);
+  }
+
+  async function requestJsonOnce(path: string, apiKey: string, init: RequestInit): Promise<unknown> {
     const controller = new AbortController();
     const timeout = setTimeout(() => {
       controller.abort();
@@ -282,4 +314,33 @@ function readNumberArray(value: unknown, path: Array<string | number>): number[]
   return Array.isArray(current) && current.every((item) => typeof item === "number")
     ? current
     : undefined;
+}
+
+function isTransientNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const cause = (error as Error & { cause?: unknown }).cause;
+  const causeCode = typeof cause === "object" && cause !== null && "code" in cause
+    ? String((cause as { code?: unknown }).code)
+    : "";
+
+  return error.message === "fetch failed"
+    || causeCode === "ECONNRESET"
+    || causeCode === "ECONNREFUSED"
+    || causeCode === "ETIMEDOUT"
+    || causeCode === "ENOTFOUND";
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : String(error);
+}
+
+async function delay(ms: number): Promise<void> {
+  if (ms <= 0) {
+    return;
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }

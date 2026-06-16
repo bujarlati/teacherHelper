@@ -9,3 +9,4 @@ playwright-report/
 .superpowers/
 teacherhelper-data/
 resources/qdrant/.qdrant-initialized
+.run-logs/

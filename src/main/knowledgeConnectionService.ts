@@ -1,7 +1,8 @@
 import type { AppSettings, KnowledgeConnectionTestResult } from "../shared/types.js";
+import type { EmbeddingContent } from "./siliconflowClient.js";
 
 export type EmbeddingClientLike = {
-  createEmbedding(input: { apiKey: string; modelName: string; input: string }): Promise<number[]>;
+  createEmbedding(input: { apiKey: string; modelName: string; input: EmbeddingContent }): Promise<number[]>;
 };
 
 export type QdrantClientLike = {
