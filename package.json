@@ -15,6 +15,7 @@
   "dependencies": {
     "docx": "^9.5.1",
     "electron-store": "^10.0.1",
+    "pdfjs-dist": "^6.0.227",
     "zod": "^4.0.0"
   },
   "devDependencies": {

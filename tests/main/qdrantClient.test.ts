@@ -56,4 +56,90 @@ describe("createQdrantClient", () => {
       "Qdrant request failed: 401 unauthorized"
     );
   });
+
+  it("creates a collection when it does not exist", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(errorResponse(404, "not found"))
+      .mockResolvedValueOnce(jsonResponse({ result: true }));
+    const client = createQdrantClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(
+      client.ensureCollection({
+        url: "http://localhost:6333",
+        apiKey: "",
+        collectionName: "teacherhelper_pages",
+        vectorSize: 4096
+      })
+    ).resolves.toBeUndefined();
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://localhost:6333/collections/teacherhelper_pages",
+      expect.objectContaining({ method: "GET" })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:6333/collections/teacherhelper_pages",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({
+          vectors: { size: 4096, distance: "Cosine" }
+        })
+      })
+    );
+  });
+
+  it("upserts textbook vectors with payloads", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ result: { operation_id: 1 } }));
+    const client = createQdrantClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await client.upsertPoints({
+      url: "http://localhost:6333",
+      apiKey: "qdrant-key",
+      collectionName: "teacherhelper_pages",
+      points: [{
+        id: "point-1",
+        vector: [0.1, 0.2],
+        payload: { textbookId: "book-1", pageNumber: 1, kind: "page" }
+      }]
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:6333/collections/teacherhelper_pages/points?wait=true",
+      expect.objectContaining({
+        method: "PUT",
+        headers: expect.objectContaining({ "api-key": "qdrant-key" }),
+        body: JSON.stringify({
+          points: [{
+            id: "point-1",
+            vector: [0.1, 0.2],
+            payload: { textbookId: "book-1", pageNumber: 1, kind: "page" }
+          }]
+        })
+      })
+    );
+  });
+
+  it("searches vectors and returns scored payloads", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      result: [{
+        id: "point-1",
+        score: 0.92,
+        payload: { textbookId: "book-1", pageNumber: 2, kind: "crop" }
+      }]
+    }));
+    const client = createQdrantClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(client.searchPoints({
+      url: "http://localhost:6333",
+      apiKey: "",
+      collectionName: "teacherhelper_pages",
+      vector: [0.1, 0.2],
+      limit: 5
+    })).resolves.toEqual([{
+      id: "point-1",
+      score: 0.92,
+      payload: { textbookId: "book-1", pageNumber: 2, kind: "crop" }
+    }]);
+  });
 });

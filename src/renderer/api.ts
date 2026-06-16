@@ -5,6 +5,9 @@ import type {
   LessonPlan,
   LocalQdrantStatus,
   ProblemDemoPlan,
+  TextbookIndexItem,
+  TextbookRecord,
+  TextbookSearchResult,
   VideoGenerateInput,
   VideoTask
 } from "../shared/types";
@@ -34,6 +37,9 @@ export type TeacherHelperRendererApi = {
   clearSettings(): Promise<void>;
   testKnowledgeConnections(): Promise<KnowledgeConnectionTestResult>;
   getQdrantStatus(): Promise<LocalQdrantStatus>;
+  indexTextbook(input: { title: string; sourceName: string; items: TextbookIndexItem[] }): Promise<TextbookRecord>;
+  listTextbooks(): Promise<TextbookRecord[]>;
+  searchTextbooks(input: { query: string; limit?: number }): Promise<TextbookSearchResult[]>;
   generateLesson(topic: string): Promise<LessonGenerateResult>;
   exportLessonDocx(input: { id: string; title: string; lesson: LessonPlan }): Promise<string>;
   generateVideo(input: VideoGenerateInput): Promise<VideoRecord>;
@@ -62,6 +68,9 @@ export const api: TeacherHelperRendererApi = {
   clearSettings: async () => getApi().clearSettings(),
   testKnowledgeConnections: async () => getApi().testKnowledgeConnections(),
   getQdrantStatus: async () => getApi().getQdrantStatus(),
+  indexTextbook: async (input) => getApi().indexTextbook(input),
+  listTextbooks: async () => getApi().listTextbooks(),
+  searchTextbooks: async (input) => getApi().searchTextbooks(input),
   generateLesson: async (topic) => getApi().generateLesson(topic),
   exportLessonDocx: async (input) => getApi().exportLessonDocx(input),
   generateVideo: async (input) => getApi().generateVideo(input),

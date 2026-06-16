@@ -5,6 +5,9 @@ import type {
   LessonPlan,
   LocalQdrantStatus,
   ProblemDemoPlan,
+  TextbookIndexItem,
+  TextbookRecord,
+  TextbookSearchResult,
   VideoGenerateInput,
   VideoTask
 } from "../src/shared/types.js";
@@ -16,6 +19,9 @@ export type TeacherHelperApi = {
   clearSettings(): Promise<void>;
   testKnowledgeConnections(): Promise<KnowledgeConnectionTestResult>;
   getQdrantStatus(): Promise<LocalQdrantStatus>;
+  indexTextbook(input: { title: string; sourceName: string; items: TextbookIndexItem[] }): Promise<TextbookRecord>;
+  listTextbooks(): Promise<TextbookRecord[]>;
+  searchTextbooks(input: { query: string; limit?: number }): Promise<TextbookSearchResult[]>;
   generateLesson(topic: string): Promise<{ id: string; lesson: LessonPlan; videoTask?: VideoTask; videoError?: string }>;
   exportLessonDocx(input: { id: string; title: string; lesson: LessonPlan }): Promise<string>;
   generateVideo(input: VideoGenerateInput): Promise<VideoRecord>;
@@ -30,6 +36,9 @@ const teacherHelperApi: TeacherHelperApi = {
   clearSettings: () => ipcRenderer.invoke("settings:clear") as Promise<void>,
   testKnowledgeConnections: () => ipcRenderer.invoke("knowledge:testConnections") as Promise<KnowledgeConnectionTestResult>,
   getQdrantStatus: () => ipcRenderer.invoke("knowledge:qdrantStatus") as Promise<LocalQdrantStatus>,
+  indexTextbook: (input) => ipcRenderer.invoke("textbook:index", input) as Promise<TextbookRecord>,
+  listTextbooks: () => ipcRenderer.invoke("textbook:list") as Promise<TextbookRecord[]>,
+  searchTextbooks: (input) => ipcRenderer.invoke("textbook:search", input) as Promise<TextbookSearchResult[]>,
   generateLesson: (topic) => ipcRenderer.invoke("lesson:generate", topic) as Promise<{
     id: string;
     lesson: LessonPlan;

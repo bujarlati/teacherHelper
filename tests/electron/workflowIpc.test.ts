@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerWorkflowIpcHandlers } from "../../electron/workflowIpc";
 import type { AppSettings, LessonPlan, LocalQdrantStatus, ProblemDemoPlan } from "../../src/shared/types";
+import type { TextbookIndexItem, TextbookRecord, TextbookSearchResult } from "../../src/shared/types";
 import type { DemoRecord, LessonRecord, VideoRecord } from "../../src/main/historyStore";
 
 type Handler = (_event: unknown, ...args: unknown[]) => unknown;
@@ -64,8 +65,18 @@ function createBaseDeps(overrides: Record<string, unknown> = {}) {
       listDemos: vi.fn(),
       listVideos: vi.fn()
     },
+    textbookStore: {
+      upsert: vi.fn(),
+      list: vi.fn()
+    },
     dataDir: tmpDir,
     client: {},
+    qdrantClient: {
+      testConnection: vi.fn(),
+      ensureCollection: vi.fn(),
+      upsertPoints: vi.fn(),
+      searchPoints: vi.fn()
+    },
     createId: vi.fn()
       .mockReturnValueOnce("generated-1")
       .mockReturnValueOnce("generated-2")
@@ -83,6 +94,8 @@ function createBaseDeps(overrides: Record<string, unknown> = {}) {
     startDemoServer: vi.fn(),
     openExternal: vi.fn().mockResolvedValue(undefined),
     exportLessonDocx: vi.fn(),
+    indexTextbook: vi.fn(),
+    searchTextbookIndex: vi.fn(),
     ...overrides
   };
 }
@@ -689,6 +702,106 @@ describe("registerWorkflowIpcHandlers", () => {
     }));
 
     await expect(fakeIpcMain.handlers.get("knowledge:qdrantStatus")?.({})).resolves.toEqual(localQdrantStatus);
+  });
+
+  it("indexes textbook pages through qdrant and saves the textbook record", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const items: TextbookIndexItem[] = [{
+      kind: "page",
+      pageNumber: 1,
+      imageDataUrl: "data:image/png;base64,AAA"
+    }];
+    const record: TextbookRecord = {
+      id: "book-1",
+      title: "七年级数学",
+      sourceName: "local.pdf",
+      collectionName: "teacherhelper_textbook_visual",
+      pageCount: 1,
+      itemCount: 1,
+      status: "indexed",
+      createdAt: "2026-06-15T03:04:05.000Z",
+      updatedAt: "2026-06-15T03:04:05.000Z"
+    };
+    const localQdrantManager = {
+      ensureRunning: vi.fn().mockResolvedValue({ mode: "local", status: "running", url: "http://127.0.0.1:6333" }),
+      getStatus: vi.fn()
+    };
+    const deps = createBaseDeps({
+      createId: () => "book-1",
+      qdrantClient: {},
+      localQdrantManager,
+      indexTextbook: vi.fn().mockResolvedValue(record)
+    });
+
+    registerWorkflowIpcHandlers(fakeIpcMain, deps);
+
+    await expect(fakeIpcMain.handlers.get("textbook:index")?.({}, {
+      title: " 七年级数学 ",
+      sourceName: "local.pdf",
+      items
+    })).resolves.toEqual(record);
+    expect(localQdrantManager.ensureRunning).toHaveBeenCalledWith(completeSettings);
+    expect(deps.indexTextbook).toHaveBeenCalledWith({
+      id: "book-1",
+      title: "七年级数学",
+      sourceName: "local.pdf",
+      items,
+      settings: completeSettings,
+      embeddingClient: deps.client,
+      qdrantClient: deps.qdrantClient,
+      textbookStore: deps.textbookStore,
+      dataDir: tmpDir,
+      now: deps.now,
+      createPointId: expect.any(Function)
+    });
+  });
+
+  it("lists indexed textbooks and searches indexed textbook vectors", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const textbooks: TextbookRecord[] = [{
+      id: "book-1",
+      title: "七年级数学",
+      sourceName: "local.pdf",
+      collectionName: "teacherhelper_textbook_visual",
+      pageCount: 1,
+      itemCount: 1,
+      status: "indexed",
+      createdAt: "2026-06-15T03:04:05.000Z",
+      updatedAt: "2026-06-15T03:04:05.000Z"
+    }];
+    const searchResults: TextbookSearchResult[] = [{
+      id: "point-1",
+      score: 0.9,
+      textbookId: "book-1",
+      title: "七年级数学",
+      sourceName: "local.pdf",
+      pageNumber: 2,
+      kind: "page",
+      imagePath: "D:\\page-002.png"
+    }];
+    const deps = createBaseDeps({
+      textbookStore: {
+        upsert: vi.fn(),
+        list: vi.fn().mockResolvedValue(textbooks)
+      },
+      qdrantClient: {},
+      searchTextbookIndex: vi.fn().mockResolvedValue(searchResults)
+    });
+
+    registerWorkflowIpcHandlers(fakeIpcMain, deps);
+
+    await expect(fakeIpcMain.handlers.get("textbook:list")?.({})).resolves.toEqual(textbooks);
+    await expect(fakeIpcMain.handlers.get("textbook:search")?.({}, {
+      query: "一次函数",
+      limit: 4
+    })).resolves.toEqual(searchResults);
+    expect(deps.searchTextbookIndex).toHaveBeenCalledWith({
+      query: "一次函数",
+      settings: completeSettings,
+      embeddingClient: deps.client,
+      qdrantClient: deps.qdrantClient,
+      limit: 4
+    });
   });
 
   it("rejects refresh for an unknown video task without calling the provider", async () => {

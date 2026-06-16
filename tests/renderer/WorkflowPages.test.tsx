@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { LessonPlan, ProblemDemoPlan, VideoTask } from "../../src/shared/types";
+import type { TextbookRecord, TextbookSearchResult } from "../../src/shared/types";
 import type { DemoRecord, LessonRecord, VideoRecord } from "../../src/main/historyStore";
 
 const lesson: LessonPlan = {
@@ -41,6 +42,29 @@ const demoPlan: ProblemDemoPlan = {
   steps: ["相加效率", "求倒数"]
 };
 
+const textbook: TextbookRecord = {
+  id: "book-1",
+  title: "七年级数学",
+  sourceName: "local.pdf",
+  collectionName: "teacherhelper_textbook_visual",
+  pageCount: 2,
+  itemCount: 6,
+  status: "indexed",
+  createdAt: "2026-06-15T03:04:05.000Z",
+  updatedAt: "2026-06-15T03:04:05.000Z"
+};
+
+const textbookSearchResult: TextbookSearchResult = {
+  id: "point-1",
+  score: 0.91,
+  textbookId: "book-1",
+  title: "七年级数学",
+  sourceName: "local.pdf",
+  pageNumber: 2,
+  kind: "page",
+  imagePath: "D:\\teacherHelper-data\\textbooks\\book-1\\pages\\page-002.png"
+};
+
 describe("workflow pages", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -52,6 +76,10 @@ describe("workflow pages", () => {
         saveSettings: vi.fn(),
         clearSettings: vi.fn(),
         testKnowledgeConnections: vi.fn(),
+        getQdrantStatus: vi.fn(),
+        indexTextbook: vi.fn(),
+        listTextbooks: vi.fn().mockResolvedValue([textbook]),
+        searchTextbooks: vi.fn().mockResolvedValue([textbookSearchResult]),
         generateLesson: vi.fn().mockResolvedValue({ id: "lesson-1", lesson, videoTask }),
         exportLessonDocx: vi.fn().mockResolvedValue("D:\\teacherHelper-data\\exports\\一次函数复习.docx"),
         generateVideo: vi.fn(),
@@ -188,6 +216,32 @@ describe("workflow pages", () => {
 
     expect(screen.getByRole("heading", { name: "视频生成" })).toBeTruthy();
     expect(screen.getByLabelText("提示词")).toBeTruthy();
+  });
+
+  test("App exposes the textbook indexing page", async () => {
+    const { App } = await import("../../src/renderer/App");
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "教材索引" }));
+
+    expect(screen.getByRole("heading", { name: "教材索引" })).toBeTruthy();
+    expect(await screen.findByText("七年级数学")).toBeTruthy();
+  });
+
+  test("TextbookPage searches indexed textbooks", async () => {
+    const { TextbookPage } = await import("../../src/renderer/pages/TextbookPage");
+
+    render(<TextbookPage />);
+
+    expect(await screen.findByText("七年级数学")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("教材检索问题"), { target: { value: "一次函数图像" } });
+    fireEvent.click(screen.getByRole("button", { name: "检索教材" }));
+
+    await waitFor(() => {
+      expect(window.teacherHelper.searchTextbooks).toHaveBeenCalledWith({ query: "一次函数图像", limit: 6 });
+    });
+    expect(await screen.findByText("第 2 页 · page · 相似度 0.91")).toBeTruthy();
   });
 
   test("VideoPage submits an image-to-video task and refreshes its status", async () => {

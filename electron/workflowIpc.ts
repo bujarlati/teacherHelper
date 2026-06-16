@@ -7,10 +7,13 @@ import type {
   KnowledgeConnectionTestResult,
   LessonPlan,
   LocalQdrantStatus,
-  ProblemDemoPlan
+  ProblemDemoPlan,
+  TextbookIndexItem,
+  TextbookRecord,
+  TextbookSearchResult
 } from "../src/shared/types.js";
 import type { DemoRecord, LessonRecord, VideoRecord } from "../src/main/historyStore.js";
-import type { EmbeddingClientLike, QdrantClientLike } from "../src/main/knowledgeConnectionService.js";
+import type { EmbeddingClientLike, QdrantClientLike as KnowledgeQdrantClientLike } from "../src/main/knowledgeConnectionService.js";
 import type { IpcMainLike } from "./settingsIpc.js";
 
 type DemoServer = {
@@ -31,9 +34,37 @@ type HistoryStoreLike = {
   listVideos(): Promise<VideoRecord[]>;
 };
 
+type TextbookStoreLike = {
+  upsert(record: TextbookRecord): Promise<void>;
+  list(): Promise<TextbookRecord[]>;
+};
+
+type QdrantClientLike = KnowledgeQdrantClientLike & {
+  ensureCollection(input: {
+    url: string;
+    apiKey: string;
+    collectionName: string;
+    vectorSize: number;
+  }): Promise<void>;
+  upsertPoints(input: {
+    url: string;
+    apiKey: string;
+    collectionName: string;
+    points: Array<{ id: string; vector: number[]; payload: Record<string, unknown> }>;
+  }): Promise<void>;
+  searchPoints(input: {
+    url: string;
+    apiKey: string;
+    collectionName: string;
+    vector: number[];
+    limit: number;
+  }): Promise<Array<{ id: string; score: number; payload: Record<string, unknown> }>>;
+};
+
 type WorkflowDeps = {
   configStore: ConfigStoreLike;
   historyStore: HistoryStoreLike;
+  textbookStore?: TextbookStoreLike;
   dataDir: string;
   client: unknown;
   qdrantClient?: QdrantClientLike;
@@ -82,6 +113,26 @@ type WorkflowDeps = {
   startDemoServer(rootDir: string): Promise<DemoServer>;
   openExternal(url: string): Promise<void>;
   exportLessonDocx(input: { filePath: string; lesson: LessonPlan }): Promise<void>;
+  indexTextbook?(input: {
+    id: string;
+    title: string;
+    sourceName: string;
+    items: TextbookIndexItem[];
+    settings: AppSettings;
+    embeddingClient: EmbeddingClientLike;
+    qdrantClient: QdrantClientLike;
+    textbookStore: TextbookStoreLike;
+    dataDir: string;
+    now: () => string;
+    createPointId: () => string;
+  }): Promise<TextbookRecord>;
+  searchTextbookIndex?(input: {
+    query: string;
+    settings: AppSettings;
+    embeddingClient: EmbeddingClientLike;
+    qdrantClient: QdrantClientLike;
+    limit: number;
+  }): Promise<TextbookSearchResult[]>;
 };
 
 const nonEmptyStringSchema = z.string().trim().min(1);
@@ -98,6 +149,26 @@ const exportLessonInputSchema = z.object({
   id: z.string().trim().min(1),
   title: z.string().trim().min(1),
   lesson: lessonPlanSchema
+});
+const textbookIndexItemSchema = z.object({
+  kind: z.enum(["page", "crop"]),
+  pageNumber: z.number().int().positive(),
+  imageDataUrl: z.string().trim().min(1),
+  cropRect: z.object({
+    x: z.number(),
+    y: z.number(),
+    width: z.number().positive(),
+    height: z.number().positive()
+  }).optional()
+});
+const textbookIndexInputSchema = z.object({
+  title: nonEmptyStringSchema,
+  sourceName: nonEmptyStringSchema,
+  items: z.array(textbookIndexItemSchema).min(1)
+});
+const textbookSearchInputSchema = z.object({
+  query: nonEmptyStringSchema,
+  limit: z.number().int().positive().max(20).default(6)
 });
 
 export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: WorkflowDeps): void {
@@ -231,6 +302,57 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
     }
 
     return deps.localQdrantManager.getStatus();
+  });
+
+  ipcMainLike.handle("textbook:index", async (_event, input) => {
+    if (!deps.indexTextbook || !deps.textbookStore || !deps.qdrantClient) {
+      throw new Error("教材索引服务未初始化。");
+    }
+
+    const parsed = textbookIndexInputSchema.parse(input);
+    const settings = await deps.configStore.load();
+    if (settings.qdrant.mode === "local") {
+      await deps.localQdrantManager?.ensureRunning(settings);
+    }
+
+    return deps.indexTextbook({
+      id: deps.createId(),
+      title: parsed.title,
+      sourceName: parsed.sourceName,
+      items: parsed.items,
+      settings,
+      embeddingClient: deps.client as EmbeddingClientLike,
+      qdrantClient: deps.qdrantClient,
+      textbookStore: deps.textbookStore,
+      dataDir: deps.dataDir,
+      now: deps.now,
+      createPointId: deps.createId
+    });
+  });
+
+  ipcMainLike.handle("textbook:list", async () => {
+    if (!deps.textbookStore) {
+      throw new Error("教材索引服务未初始化。");
+    }
+
+    return deps.textbookStore.list();
+  });
+
+  ipcMainLike.handle("textbook:search", async (_event, input) => {
+    if (!deps.searchTextbookIndex || !deps.qdrantClient) {
+      throw new Error("教材检索服务未初始化。");
+    }
+
+    const parsed = textbookSearchInputSchema.parse(input);
+    const settings = await deps.configStore.load();
+
+    return deps.searchTextbookIndex({
+      query: parsed.query,
+      settings,
+      embeddingClient: deps.client as EmbeddingClientLike,
+      qdrantClient: deps.qdrantClient,
+      limit: parsed.limit
+    });
   });
 
   ipcMainLike.handle("history:list", async () => ({

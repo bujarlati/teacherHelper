@@ -14,6 +14,8 @@ import { createLocalQdrantManager } from "../src/main/localQdrantManager.js";
 import { getAppDataDir } from "../src/main/paths.js";
 import { createQdrantClient } from "../src/main/qdrantClient.js";
 import { createSiliconFlowClient } from "../src/main/siliconflowClient.js";
+import { indexTextbook, searchTextbookIndex } from "../src/main/textbookIndexService.js";
+import { createTextbookStore } from "../src/main/textbookStore.js";
 import { createStandaloneVideoTask, createVideoTaskFromLesson, refreshVideoTaskStatus } from "../src/main/videoWorkflow.js";
 import { registerSettingsIpcHandlers } from "./settingsIpc.js";
 import { registerWorkflowIpcHandlers } from "./workflowIpc.js";
@@ -22,6 +24,7 @@ export function registerIpcHandlers(): void {
   const dataDir = getAppDataDir();
   const configStore = createConfigStore(dataDir);
   const historyStore = createHistoryStore(dataDir);
+  const textbookStore = createTextbookStore(dataDir);
   const client = createSiliconFlowClient();
   const qdrantClient = createQdrantClient();
   const localQdrantManager = createLocalQdrantManager({ dataDir });
@@ -39,6 +42,7 @@ export function registerIpcHandlers(): void {
   registerWorkflowIpcHandlers(ipcMain, {
     configStore,
     historyStore,
+    textbookStore,
     dataDir,
     client,
     qdrantClient,
@@ -57,6 +61,8 @@ export function registerIpcHandlers(): void {
     renderSimpleDemoHtml,
     startDemoServer,
     openExternal: (url) => shell.openExternal(url),
-    exportLessonDocx
+    exportLessonDocx,
+    indexTextbook,
+    searchTextbookIndex
   });
 }

@@ -103,3 +103,44 @@ export type VideoTask = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type TextbookImageKind = "page" | "crop";
+
+export type TextbookCropRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type TextbookIndexItem = {
+  kind: TextbookImageKind;
+  pageNumber: number;
+  imageDataUrl: string;
+  cropRect?: TextbookCropRect;
+};
+
+export type TextbookRecord = {
+  id: string;
+  title: string;
+  sourceName: string;
+  collectionName: string;
+  pageCount: number;
+  itemCount: number;
+  status: "indexed" | "failed";
+  createdAt: string;
+  updatedAt: string;
+  error?: string;
+};
+
+export type TextbookSearchResult = {
+  id: string;
+  score: number;
+  textbookId: string;
+  title: string;
+  sourceName: string;
+  pageNumber: number;
+  kind: TextbookImageKind;
+  imagePath: string;
+  cropRect?: TextbookCropRect;
+};

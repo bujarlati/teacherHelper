@@ -152,6 +152,10 @@ h1 {
   gap: 22px;
 }
 
+.compact-form {
+  margin: 0 0 22px;
+}
+
 fieldset {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -221,10 +225,28 @@ textarea:focus {
   outline: 3px solid #cfe0da;
 }
 
+.progress-block {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  color: #53615d;
+  font-size: 14px;
+}
+
+.progress-block progress {
+  width: 100%;
+}
+
 .form-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.result-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
 }
 
 .secondary-button {
@@ -469,6 +491,10 @@ h2 {
   fieldset {
     grid-template-columns: 1fr;
     padding: 18px;
+  }
+
+  .result-grid {
+    grid-template-columns: 1fr;
   }
 
   .detail-heading {
