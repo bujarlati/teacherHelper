@@ -6,6 +6,13 @@ import { buildLessonPrompt } from "./lessonPrompt.js";
 type ModelLessonPlan = Omit<LessonPlan, "markdown"> & { markdown?: string };
 
 const modelStringListSchema = z.preprocess(normalizeStringList, z.array(z.string().min(1)));
+const modelExampleQuestionSchema = z.preprocess(
+  normalizeExampleQuestion,
+  z.object({
+    question: z.string().min(1),
+    answer: z.string().min(1)
+  })
+);
 
 const modelLessonPlanSchema = lessonPlanSchema.extend({
   teaching_goals: modelStringListSchema,
@@ -20,6 +27,7 @@ const modelLessonPlanSchema = lessonPlanSchema.extend({
     })
   ),
   board_design: modelStringListSchema,
+  example_questions: z.preprocess(normalizeStringList, z.array(modelExampleQuestionSchema)),
   worked_solutions: z.array(
     z.object({
       question: z.string().min(1),
@@ -177,6 +185,24 @@ function normalizeStringList(value: unknown): unknown {
 
 function cleanListItem(value: string): string {
   return value.replace(/^\s*(?:[-*•]\s*)?(?:(?:\d+[.、)]|\(\d+\)|（\d+）)\s*)?/, "").trim();
+}
+
+function normalizeExampleQuestion(value: unknown): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  const text = cleanListItem(value);
+  const match = text.match(/^(?:题目|问题|问|例题)?\s*[:：]?\s*(.*?)\s*(?:答案|答)\s*[:：]\s*(.+)$/s);
+
+  if (!match?.[1]?.trim() || !match[2]?.trim()) {
+    return value;
+  }
+
+  return {
+    question: cleanListItem(match[1]),
+    answer: cleanListItem(match[2])
+  };
 }
 
 function formatZodIssues(error: ZodError): string {
