@@ -3,6 +3,12 @@ import { lessonPlanSchema } from "../shared/schemas.js";
 import type { LessonPlan, ModelConfig } from "../shared/types.js";
 import { buildLessonPrompt } from "./lessonPrompt.js";
 
+type ModelLessonPlan = Omit<LessonPlan, "markdown"> & { markdown?: string };
+
+const modelLessonPlanSchema = lessonPlanSchema.extend({
+  markdown: lessonPlanSchema.shape.markdown.optional()
+});
+
 type LessonClient = {
   chatCompletion(input: {
     apiKey: string;
@@ -43,7 +49,7 @@ export async function generateLessonPlan(input: {
   };
 }
 
-export function renderLessonMarkdown(plan: LessonPlan): string {
+export function renderLessonMarkdown(plan: ModelLessonPlan): string {
   const exampleQuestions = plan.example_questions
     .map((item, index) => `${index + 1}. ${item.question}\n   答：${item.answer}`)
     .join("\n");
@@ -89,7 +95,7 @@ function renderList(items: string[]): string {
   return items.map((item) => `- ${item}`).join("\n");
 }
 
-function renderLessonFlow(items: LessonPlan["lesson_flow"]): string {
+function renderLessonFlow(items: ModelLessonPlan["lesson_flow"]): string {
   return items.map((item) => `- ${item.title}（${item.minutes} 分钟）：${item.activities.join("；")}`).join("\n");
 }
 
@@ -107,14 +113,20 @@ function parseLessonJson(value: string): unknown {
   }
 }
 
-function parseLessonPlan(value: unknown): LessonPlan {
+function parseLessonPlan(value: unknown): ModelLessonPlan {
   try {
-    return lessonPlanSchema.parse(value);
+    return modelLessonPlanSchema.parse(value);
   } catch (error) {
     if (error instanceof ZodError) {
-      throw new Error("模型返回的教案结构不完整，请重试。");
+      throw new Error(`模型返回的教案结构不完整${formatZodIssues(error)}，请重试。`);
     }
 
     throw error;
   }
+}
+
+function formatZodIssues(error: ZodError): string {
+  const paths = Array.from(new Set(error.issues.map((issue) => issue.path.join(".")).filter(Boolean))).slice(0, 5);
+
+  return paths.length > 0 ? `（问题字段：${paths.join("、")}）` : "";
 }

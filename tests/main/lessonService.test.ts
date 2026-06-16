@@ -87,6 +87,24 @@ describe("generateLessonPlan", () => {
     ).resolves.toMatchObject({ title: "一元一次方程" });
   });
 
+  it("accepts model lesson JSON without markdown because markdown is rendered locally", async () => {
+    const { markdown: _markdown, ...modelLesson } = completeLessonPlan();
+    const fakeClient = {
+      chatCompletion: vi.fn(async () => JSON.stringify(modelLesson))
+    };
+
+    await expect(
+      generateLessonPlan({
+        topic: "一元一次方程",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({
+      title: "一元一次方程",
+      markdown: expect.stringContaining("## 教学重点")
+    });
+  });
+
   it("throws a clear Chinese error when text model config is missing", async () => {
     const fakeClient = {
       chatCompletion: vi.fn(async () => JSON.stringify(completeLessonPlan()))
@@ -127,7 +145,7 @@ describe("generateLessonPlan", () => {
         config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
         client: fakeClient
       })
-    ).rejects.toThrow();
+    ).rejects.toThrow("grade_suggestion");
   });
 });
 
