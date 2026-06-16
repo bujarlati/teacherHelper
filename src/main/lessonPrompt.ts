@@ -9,7 +9,8 @@ export function buildLessonPrompt(topic: string) {
         "JSON 必须包含：title, grade_suggestion, teaching_goals, key_points, difficult_points, common_confusions, lesson_flow, board_design, example_questions, worked_solutions, classroom_questions, homework_suggestions, video_script, video_prompt, markdown。",
         "lesson_flow 每一项必须包含 title, minutes, activities。",
         "worked_solutions 每一项必须包含 question, steps, answer。",
-        "video_script 用中文写成可朗读的短视频讲解脚本，video_prompt 用英文描述适合生成教学动画的视频画面。"
+        "video_script 用中文写成可朗读的短视频讲解脚本，video_prompt 用英文描述适合生成教学动画的视频画面。",
+        "控制输出体量：每个数组 3 到 5 项，步骤清晰但不要长篇铺陈，确保完整 JSON 能在 4096 tokens 内结束。"
       ].join("\n")
     },
     {

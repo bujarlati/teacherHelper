@@ -22,6 +22,19 @@ type ChatMessage = {
   content: string;
 };
 
+type ResponseFormat = {
+  type: "json_object";
+};
+
+type ChatCompletionInput = {
+  apiKey: string;
+  modelName: string;
+  messages: ChatMessage[];
+  maxTokens?: number;
+  temperature?: number;
+  responseFormat?: ResponseFormat;
+};
+
 type VideoStatusResult = {
   status: VideoTaskStatus;
   reason?: string;
@@ -74,10 +87,19 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
   }
 
   return {
-    async chatCompletion(input: { apiKey: string; modelName: string; messages: ChatMessage[] }): Promise<string> {
+    async chatCompletion(input: ChatCompletionInput): Promise<string> {
+      const body: Record<string, JsonValue | undefined> = {
+        model: input.modelName,
+        messages: input.messages,
+        stream: false,
+        max_tokens: input.maxTokens,
+        temperature: input.temperature,
+        response_format: input.responseFormat
+      };
+
       const data = await requestJson("/chat/completions", input.apiKey, {
         method: "POST",
-        body: JSON.stringify({ model: input.modelName, messages: input.messages })
+        body: JSON.stringify(body)
       });
       const content = readString(data, ["choices", 0, "message", "content"]);
       if (!content) {

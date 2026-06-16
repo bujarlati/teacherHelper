@@ -26,7 +26,7 @@ function errorResponse(status: number, body: string): Response {
 }
 
 describe("createSiliconFlowClient", () => {
-  it("calls chat completions with POST JSON bearer auth and returns first choice content", async () => {
+  it("calls chat completions with POST JSON bearer auth and optional generation controls", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({
         choices: [{ message: { content: "{\"title\":\"ok\"}" } }]
@@ -37,7 +37,10 @@ describe("createSiliconFlowClient", () => {
     const content = await client.chatCompletion({
       apiKey: "key",
       modelName: "Qwen/Qwen3-32B",
-      messages: [{ role: "user", content: "hello" }]
+      messages: [{ role: "user", content: "hello" }],
+      maxTokens: 4096,
+      temperature: 0.4,
+      responseFormat: { type: "json_object" }
     });
 
     expect(content).toBe("{\"title\":\"ok\"}");
@@ -51,7 +54,11 @@ describe("createSiliconFlowClient", () => {
         }),
         body: JSON.stringify({
           model: "Qwen/Qwen3-32B",
-          messages: [{ role: "user", content: "hello" }]
+          messages: [{ role: "user", content: "hello" }],
+          stream: false,
+          max_tokens: 4096,
+          temperature: 0.4,
+          response_format: { type: "json_object" }
         })
       })
     );

@@ -42,6 +42,7 @@ describe("buildLessonPrompt", () => {
     expect(combined).toContain("video_script");
     expect(combined).toContain("video_prompt");
     expect(combined).toContain("只返回 JSON");
+    expect(combined).toContain("控制输出体量");
   });
 });
 
@@ -65,7 +66,10 @@ describe("generateLessonPlan", () => {
     expect(fakeClient.chatCompletion).toHaveBeenCalledWith({
       apiKey: "key",
       modelName: "Qwen/Qwen3-32B",
-      messages: buildLessonPrompt("一元一次方程")
+      messages: buildLessonPrompt("一元一次方程"),
+      maxTokens: 4096,
+      temperature: 0.4,
+      responseFormat: { type: "json_object" }
     });
   });
 

@@ -8,6 +8,9 @@ type LessonClient = {
     apiKey: string;
     modelName: string;
     messages: ReturnType<typeof buildLessonPrompt>;
+    maxTokens?: number;
+    temperature?: number;
+    responseFormat?: { type: "json_object" };
   }): Promise<string>;
 };
 
@@ -25,7 +28,10 @@ export async function generateLessonPlan(input: {
   const raw = await input.client.chatCompletion({
     apiKey: input.config.apiKey,
     modelName: input.config.modelName,
-    messages: buildLessonPrompt(input.topic)
+    messages: buildLessonPrompt(input.topic),
+    maxTokens: 4096,
+    temperature: 0.4,
+    responseFormat: { type: "json_object" }
   });
 
   const parsedJson = parseLessonJson(stripCodeFence(raw));

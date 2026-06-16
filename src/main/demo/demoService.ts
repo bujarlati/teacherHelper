@@ -8,6 +8,9 @@ type AnalyzeClient = {
     apiKey: string;
     modelName: string;
     messages: ReturnType<typeof buildAnalyzeProblemPrompt>;
+    maxTokens?: number;
+    temperature?: number;
+    responseFormat?: { type: "json_object" };
   }): Promise<string>;
 };
 
@@ -25,7 +28,10 @@ export async function analyzeProblemForDemo(input: {
   const raw = await input.client.chatCompletion({
     apiKey: input.config.apiKey,
     modelName: input.config.modelName,
-    messages: buildAnalyzeProblemPrompt(input.problem)
+    messages: buildAnalyzeProblemPrompt(input.problem),
+    maxTokens: 1800,
+    temperature: 0.2,
+    responseFormat: { type: "json_object" }
   });
 
   return parseProblemDemoPlan(parseProblemDemoJson(stripCodeFence(raw)));

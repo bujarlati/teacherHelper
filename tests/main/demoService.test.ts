@@ -59,7 +59,10 @@ describe("analyzeProblemForDemo", () => {
     expect(fakeClient.chatCompletion).toHaveBeenCalledWith({
       apiKey: "key",
       modelName: "Qwen/Qwen3-32B",
-      messages: buildAnalyzeProblemPrompt("小明今年 12 岁，比妹妹年龄的 2 倍少 4 岁，妹妹几岁？")
+      messages: buildAnalyzeProblemPrompt("小明今年 12 岁，比妹妹年龄的 2 倍少 4 岁，妹妹几岁？"),
+      maxTokens: 1800,
+      temperature: 0.2,
+      responseFormat: { type: "json_object" }
     });
   });
 
