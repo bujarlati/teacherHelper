@@ -17,6 +17,12 @@ export default defineConfig({
   preload: {
     build: {
       outDir: "dist-electron/preload",
+      rollupOptions: {
+        output: {
+          format: "cjs",
+          entryFileNames: "[name].cjs"
+        }
+      },
       lib: {
         entry: resolve(configDir, "electron/preload.ts")
       }

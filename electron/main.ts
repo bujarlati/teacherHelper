@@ -9,7 +9,7 @@ export async function createWindow(): Promise<BrowserWindow> {
     minWidth: 980,
     minHeight: 680,
     webPreferences: {
-      preload: fileURLToPath(new URL("../preload/preload.mjs", import.meta.url)),
+      preload: fileURLToPath(new URL("../preload/preload.cjs", import.meta.url)),
       contextIsolation: true,
       nodeIntegration: false
     }
