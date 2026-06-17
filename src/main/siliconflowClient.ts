@@ -35,8 +35,7 @@ export type EmbeddingContent =
 
 export type RerankDocument =
   | string
-  | { text?: string; image?: string; video?: string }
-  | Array<{ text?: string; image?: string; video?: string }>;
+  | { text?: string; image?: string; video?: string };
 
 type ChatCompletionInput = {
   apiKey: string;

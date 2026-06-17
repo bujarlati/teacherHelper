@@ -377,14 +377,14 @@ describe("textbookIndexService", () => {
       topN: 2,
       instruction: expect.stringContaining("教材"),
       documents: [
-        [
-          { text: expect.stringContaining("第 1 页") },
-          { image: `data:image/png;base64,${Buffer.from("first-image").toString("base64")}` }
-        ],
-        [
-          { text: expect.stringContaining("第 2 页") },
-          { image: `data:image/png;base64,${Buffer.from("second-image").toString("base64")}` }
-        ]
+        {
+          text: expect.stringContaining("第 1 页"),
+          image: `data:image/png;base64,${Buffer.from("first-image").toString("base64")}`
+        },
+        {
+          text: expect.stringContaining("第 2 页"),
+          image: `data:image/png;base64,${Buffer.from("second-image").toString("base64")}`
+        }
       ]
     });
     expect(results.map((item) => item.id)).toEqual(["point-2", "point-1"]);
@@ -427,7 +427,7 @@ describe("textbookIndexService", () => {
     })).resolves.toEqual([expect.objectContaining({
       id: "point-1",
       rankingSource: "qdrant",
-      rankingMessage: "重排序失败，已使用向量排序结果。",
+      rankingMessage: "重排序失败：rerank unavailable，已使用向量排序结果。",
       imageDataUrl: `data:image/png;base64,${Buffer.from("first-image").toString("base64")}`
     })]);
   });

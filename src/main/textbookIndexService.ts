@@ -9,7 +9,7 @@ import type {
   TextbookSearchResult,
   TextbookSource
 } from "../shared/types.js";
-import type { EmbeddingContent } from "./siliconflowClient.js";
+import type { EmbeddingContent, RerankDocument } from "./siliconflowClient.js";
 
 type EmbeddingClientLike = {
   createEmbedding(input: { apiKey: string; modelName: string; input: EmbeddingContent }): Promise<number[]>;
@@ -17,7 +17,7 @@ type EmbeddingClientLike = {
     apiKey: string;
     modelName: string;
     query: string;
-    documents: Array<Array<{ text?: string; image?: string }>>;
+    documents: RerankDocument[];
     topN: number;
     instruction?: string;
   }): Promise<Array<{ index: number; relevanceScore: number }>>;
@@ -226,10 +226,10 @@ export async function searchTextbookIndex(input: {
     }
 
     return rerankedResults.length > 0 ? rerankedResults : visibleResults;
-  } catch {
+  } catch (error) {
     return visibleResults.map((result) => ({
       ...result,
-      rankingMessage: "重排序失败，已使用向量排序结果。"
+      rankingMessage: `重排序失败：${getErrorMessage(error)}，已使用向量排序结果。`
     }));
   }
 }
@@ -407,12 +407,12 @@ async function readImageDataUrl(imagePath: string): Promise<{ imageDataUrl?: str
   }
 }
 
-function createRerankDocument(result: TextbookSearchResult): Array<{ text?: string; image?: string }> {
+function createRerankDocument(result: TextbookSearchResult): RerankDocument {
   const sourcePage = result.sourcePageNumber ? `，源 PDF 第 ${result.sourcePageNumber} 页` : "";
   const text = `${result.title}，${result.sourceName}，第 ${result.pageNumber} 页${sourcePage}，类型 ${result.kind}`;
   return result.imageDataUrl
-    ? [{ text }, { image: result.imageDataUrl }]
-    : [{ text }];
+    ? { text, image: result.imageDataUrl }
+    : { text };
 }
 
 function isCropRect(value: unknown): value is TextbookCropRect {

@@ -221,8 +221,8 @@ describe("createSiliconFlowClient", () => {
       baseUrl: "https://example.test/v1"
     });
     const documents = [
-      [{ text: "七年级数学 第 1 页" }, { image: "data:image/png;base64,AAA" }],
-      [{ text: "七年级数学 第 2 页" }, { image: "data:image/png;base64,BBB" }]
+      { text: "七年级数学 第 1 页", image: "data:image/png;base64,AAA" },
+      { text: "七年级数学 第 2 页", image: "data:image/png;base64,BBB" }
     ];
 
     await expect(client.rerank({
