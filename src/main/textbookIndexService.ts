@@ -106,11 +106,18 @@ export async function indexTextbook(input: IndexTextbookInput): Promise<Textbook
       sourceDirectories
     });
     await writeDataUrlImage(imagePath, item.imageDataUrl);
-    const vector = await input.embeddingClient.createEmbedding({
-      apiKey: input.settings.embeddingModel.apiKey,
-      modelName: input.settings.embeddingModel.modelName,
-      input: { image: item.imageDataUrl }
-    });
+    let vector: number[];
+    try {
+      vector = await input.embeddingClient.createEmbedding({
+        apiKey: input.settings.embeddingModel.apiKey,
+        modelName: input.settings.embeddingModel.modelName,
+        input: { image: item.imageDataUrl }
+      });
+    } catch (error) {
+      throw new Error(
+        `教材图片向量化失败：${sourceName} 第 ${sourcePageNumber} 页，${formatImageKind(item.kind)}。${getErrorMessage(error)}`
+      );
+    }
     addSourceStat(sourceStats, sourceName, sourcePageNumber, item);
     savedItems.push({ item, sourceName, sourcePageNumber, imagePath, vector });
   }
@@ -324,6 +331,14 @@ function sourceStatsToSources(stats: Map<string, SourceStat>): TextbookSource[] 
 
 function safePathSegment(value: string): string {
   return value.trim().replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "") || "source";
+}
+
+function formatImageKind(kind: TextbookImageKind): string {
+  return kind === "page" ? "整页" : "局部切块";
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : String(error);
 }
 
 function chunk<T>(items: T[], size: number): T[][] {

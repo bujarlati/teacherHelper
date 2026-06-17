@@ -72,6 +72,18 @@ type VideoStatusResult = {
   inferenceMs?: number;
 };
 
+class SiliconFlowHttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly body: string,
+    readonly retryAfterMs?: number,
+    readonly traceId?: string
+  ) {
+    super(createHttpErrorMessage(status, body, traceId));
+    this.name = "SiliconFlowHttpError";
+  }
+}
+
 export function createSiliconFlowClient(options: ClientOptions = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const baseUrl = (options.baseUrl ?? "https://api.siliconflow.cn/v1").replace(/\/$/, "");
@@ -80,26 +92,33 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
   const maxAttempts = 3;
 
   async function requestJson(path: string, apiKey: string, init: RequestInit): Promise<unknown> {
-    let lastNetworkError: unknown;
+    let lastTransientError: unknown;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
         return await requestJsonOnce(path, apiKey, init);
       } catch (error) {
-        if (!isTransientNetworkError(error) || attempt === maxAttempts) {
+        const transientNetworkError = isTransientNetworkError(error);
+        const transientHttpError = isTransientHttpError(error);
+        if ((!transientNetworkError && !transientHttpError) || attempt === maxAttempts) {
           if (isTransientNetworkError(error)) {
             throw new Error(`SiliconFlow 网络请求中断，请稍后重试或检查网络/代理连接。原始错误：${getErrorMessage(error)}`);
+          }
+          if (isTransientHttpError(error)) {
+            throw new Error(
+              `硅基流动服务暂时不可用（HTTP ${error.status}），已重试 ${maxAttempts} 次。请稍后重试，或检查该模型当前是否可用。原始错误：${getErrorMessage(error)}`
+            );
           }
 
           throw error;
         }
 
-        lastNetworkError = error;
-        await delay(retryDelayMs * attempt);
+        lastTransientError = error;
+        await delay(getRetryDelay(error, retryDelayMs * attempt));
       }
     }
 
-    throw new Error(`SiliconFlow 网络请求中断，请稍后重试或检查网络/代理连接。原始错误：${getErrorMessage(lastNetworkError)}`);
+    throw new Error(`SiliconFlow 网络请求中断，请稍后重试或检查网络/代理连接。原始错误：${getErrorMessage(lastTransientError)}`);
   }
 
   async function requestJsonOnce(path: string, apiKey: string, init: RequestInit): Promise<unknown> {
@@ -121,7 +140,12 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
 
       if (!response.ok) {
         const text = await response.text();
-        throw new Error(`SiliconFlow request failed: ${response.status} ${text}`);
+        throw new SiliconFlowHttpError(
+          response.status,
+          text,
+          parseRetryAfterMs(response.headers.get("retry-after")),
+          response.headers.get("x-siliconcloud-trace-id") ?? undefined
+        );
       }
 
       try {
@@ -320,6 +344,11 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
   };
 }
 
+function createHttpErrorMessage(status: number, body: string, traceId?: string): string {
+  const traceSuffix = traceId ? ` traceId=${traceId}` : "";
+  return `SiliconFlow request failed: ${status} ${body}${traceSuffix}`;
+}
+
 function isRecord(value: unknown): value is Record<string, JsonValue> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -375,6 +404,37 @@ function isTransientNetworkError(error: unknown): boolean {
     || causeCode === "ECONNREFUSED"
     || causeCode === "ETIMEDOUT"
     || causeCode === "ENOTFOUND";
+}
+
+function isTransientHttpError(error: unknown): error is SiliconFlowHttpError {
+  return error instanceof SiliconFlowHttpError
+    && (error.status === 429 || error.status === 500 || error.status === 502 || error.status === 503 || error.status === 504);
+}
+
+function parseRetryAfterMs(value: string | null): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return seconds * 1000;
+  }
+
+  const dateMs = Date.parse(value);
+  if (Number.isNaN(dateMs)) {
+    return undefined;
+  }
+
+  return Math.max(0, dateMs - Date.now());
+}
+
+function getRetryDelay(error: unknown, fallbackMs: number): number {
+  if (error instanceof SiliconFlowHttpError && typeof error.retryAfterMs === "number") {
+    return Math.max(error.retryAfterMs, fallbackMs);
+  }
+
+  return fallbackMs;
 }
 
 function getErrorMessage(error: unknown): string {

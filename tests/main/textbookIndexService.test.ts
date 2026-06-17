@@ -237,6 +237,44 @@ describe("textbookIndexService", () => {
     }));
   });
 
+  it("adds source and page context when image embedding fails", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "teacherhelper-index-"));
+    const items: TextbookIndexItem[] = [{
+      kind: "crop",
+      pageNumber: 7,
+      sourceName: "math-volume.pdf",
+      sourcePageNumber: 3,
+      imageDataUrl: pngDataUrl,
+      cropRect: { x: 0, y: 0, width: 320, height: 240 }
+    }];
+    const embeddingClient = {
+      createEmbedding: vi.fn().mockRejectedValue(new Error("SiliconFlow request failed: 500 {\"data\":null}"))
+    };
+    const qdrantClient = {
+      ensureCollection: vi.fn().mockResolvedValue(undefined),
+      upsertPoints: vi.fn().mockResolvedValue(undefined)
+    };
+    const textbookStore = {
+      upsert: vi.fn().mockResolvedValue(undefined)
+    };
+
+    await expect(indexTextbook({
+      id: "book-1",
+      title: "七年级数学",
+      sourceNames: ["math-volume.pdf"],
+      items,
+      settings,
+      embeddingClient,
+      qdrantClient,
+      textbookStore,
+      dataDir: tempDir,
+      now: () => "2026-06-15T03:04:05.000Z",
+      createPointId: vi.fn()
+    })).rejects.toThrow("教材图片向量化失败：math-volume.pdf 第 3 页，局部切块。SiliconFlow request failed: 500 {\"data\":null}");
+    expect(qdrantClient.ensureCollection).not.toHaveBeenCalled();
+    expect(textbookStore.upsert).not.toHaveBeenCalled();
+  });
+
   it("searches textbook vectors from a Chinese question", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "teacherhelper-search-"));
     const imagePath = join(tempDir, "page-003.png");

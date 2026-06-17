@@ -21,7 +21,8 @@ function errorResponse(status: number, body: string): Response {
   return {
     ok: false,
     status,
-    text: async () => body
+    text: async () => body,
+    headers: new Headers()
   } as Response;
 }
 
@@ -294,6 +295,35 @@ describe("createSiliconFlowClient", () => {
     await expect(
       client.createEmbedding({ apiKey: "key", modelName: "Qwen/Qwen3-VL-Embedding-8B", input: { image: "data:image/png;base64,AAA" } })
     ).rejects.toThrow("SiliconFlow 网络请求中断");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("retries transient SiliconFlow HTTP errors before returning an embedding", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(errorResponse(500, "{\"data\":null}"))
+      .mockResolvedValueOnce(errorResponse(503, "{\"message\":\"overloaded\"}"))
+      .mockResolvedValueOnce(jsonResponse({ data: [{ embedding: [0.9, 0.8] }] }));
+    const client = createSiliconFlowClient({
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      retryDelayMs: 0
+    });
+
+    await expect(
+      client.createEmbedding({ apiKey: "key", modelName: "Qwen/Qwen3-VL-Embedding-8B", input: { image: "data:image/png;base64,AAA" } })
+    ).resolves.toEqual([0.9, 0.8]);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("throws a readable message after repeated transient SiliconFlow HTTP errors", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(errorResponse(500, "{\"data\":null}"));
+    const client = createSiliconFlowClient({
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      retryDelayMs: 0
+    });
+
+    await expect(
+      client.createEmbedding({ apiKey: "key", modelName: "Qwen/Qwen3-VL-Embedding-8B", input: { image: "data:image/png;base64,AAA" } })
+    ).rejects.toThrow("硅基流动服务暂时不可用");
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
