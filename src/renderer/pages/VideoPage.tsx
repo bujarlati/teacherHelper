@@ -168,7 +168,9 @@ export function VideoPage(): ReactElement {
             {video.videoUrl ? (
               <div>
                 <dt>视频</dt>
-                <dd>{video.videoUrl}</dd>
+                <dd>
+                  <VideoPreview url={video.videoUrl} />
+                </dd>
               </div>
             ) : null}
             {video.reason ? (
@@ -209,4 +211,15 @@ function getVideoRefreshStatus(video: VideoRecord): string {
   if (video.status === "Failed") return "视频生成失败。";
 
   return `视频状态已刷新：${video.status}`;
+}
+
+function VideoPreview({ url }: { url: string }): ReactElement {
+  return (
+    <div className="video-preview-block">
+      <video className="video-preview" controls preload="metadata" src={url} aria-label="生成视频预览" />
+      <div className="record-actions">
+        <a className="secondary-link" href={url} target="_blank" rel="noreferrer">打开视频</a>
+      </div>
+    </div>
+  );
 }

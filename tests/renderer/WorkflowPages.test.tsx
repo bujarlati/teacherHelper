@@ -379,7 +379,10 @@ describe("workflow pages", () => {
       expect(window.teacherHelper.refreshVideo).toHaveBeenCalledWith("video-standalone-1");
     });
     expect(await screen.findByText("状态：Succeed")).toBeTruthy();
-    expect(screen.getByText("https://cdn.example.test/video.mp4")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "打开视频" }).getAttribute("href")).toBe(
+      "https://cdn.example.test/video.mp4"
+    );
+    expect(screen.getByLabelText("生成视频预览").getAttribute("src")).toBe("https://cdn.example.test/video.mp4");
   });
 
   test("HistoryPage lists lesson, demo, and video records", async () => {
@@ -483,7 +486,60 @@ describe("workflow pages", () => {
       expect(window.teacherHelper.refreshVideo).toHaveBeenCalledWith("video-1");
     });
     expect(await screen.findByText("状态：Succeed")).toBeTruthy();
-    expect(screen.getByText("https://cdn.example.test/video.mp4")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "打开视频" }).getAttribute("href")).toBe(
+      "https://cdn.example.test/video.mp4"
+    );
+    expect(screen.getByLabelText("视频任务 video-1 预览").getAttribute("src")).toBe(
+      "https://cdn.example.test/video.mp4"
+    );
     expect(screen.getByText("视频已生成。")).toBeTruthy();
+  });
+
+  test("HistoryPage previews saved videos and refreshes completed video links", async () => {
+    const finishedVideo: VideoRecord = {
+      id: "video-1",
+      lessonId: "lesson-1",
+      requestId: "request-1",
+      status: "Succeed",
+      prompt: "prompt",
+      script: "script",
+      videoUrl: "https://cdn.example.test/old-video.mp4",
+      createdAt: "2026-06-15T03:04:05.000Z",
+      updatedAt: "2026-06-15T04:05:06.000Z"
+    };
+    const refreshedVideo: VideoRecord = {
+      ...finishedVideo,
+      videoUrl: "https://cdn.example.test/new-video.mp4",
+      updatedAt: "2026-06-15T05:06:07.000Z"
+    };
+    window.teacherHelper.listHistory = vi.fn().mockResolvedValue({
+      lessons: [],
+      demos: [],
+      videos: [finishedVideo]
+    });
+    window.teacherHelper.refreshVideo = vi.fn().mockResolvedValue(refreshedVideo);
+    const { HistoryPage } = await import("../../src/renderer/pages/HistoryPage");
+
+    render(<HistoryPage />);
+
+    expect(await screen.findByText("视频任务 video-1")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "打开视频" }).getAttribute("href")).toBe(
+      "https://cdn.example.test/old-video.mp4"
+    );
+    expect(screen.getByLabelText("视频任务 video-1 预览").getAttribute("src")).toBe(
+      "https://cdn.example.test/old-video.mp4"
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "刷新状态" }));
+
+    await waitFor(() => {
+      expect(window.teacherHelper.refreshVideo).toHaveBeenCalledWith("video-1");
+    });
+    expect(screen.getByRole("link", { name: "打开视频" }).getAttribute("href")).toBe(
+      "https://cdn.example.test/new-video.mp4"
+    );
+    expect(screen.getByLabelText("视频任务 video-1 预览").getAttribute("src")).toBe(
+      "https://cdn.example.test/new-video.mp4"
+    );
   });
 });

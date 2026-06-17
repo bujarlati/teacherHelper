@@ -34,6 +34,23 @@ button {
   cursor: pointer;
 }
 
+a.secondary-link {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #315b50;
+  border-radius: 6px;
+  padding: 0 16px;
+  color: #315b50;
+  background: #ffffff;
+  text-decoration: none;
+}
+
+a.secondary-link:hover {
+  background: #edf4ef;
+}
+
 button:hover:not(:disabled) {
   background: #264a41;
 }
@@ -447,6 +464,19 @@ h2 {
 .record-list span {
   color: #53615d;
   line-height: 1.5;
+}
+
+.video-preview-block {
+  display: grid;
+  gap: 10px;
+}
+
+.video-preview {
+  width: 100%;
+  max-height: 420px;
+  border: 1px solid #d2d9d5;
+  border-radius: 8px;
+  background: #202927;
 }
 
 .record-actions {

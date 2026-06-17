@@ -487,6 +487,24 @@ describe("createSiliconFlowClient", () => {
     );
   });
 
+  it("accepts pending video status responses without generated results", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        status: "InQueue",
+        position: 0,
+        reason: "",
+        results: null,
+        requestId: ""
+      })
+    );
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(client.getVideoStatus({ apiKey: "key", requestId: "req-1" })).resolves.toEqual({
+      status: "InQueue",
+      reason: ""
+    });
+  });
+
   it("rejects invalid video status through schema validation", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ status: "Cancelled" }));
     const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });

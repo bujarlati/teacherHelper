@@ -308,7 +308,7 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
       }
 
       const results = data.results;
-      if (results !== undefined) {
+      if (results !== undefined && results !== null) {
         if (!isRecord(results)) throw new Error("SiliconFlow returned invalid video status response");
 
         if (results.videos !== undefined) {

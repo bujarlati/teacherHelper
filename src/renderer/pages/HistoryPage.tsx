@@ -153,7 +153,9 @@ export function HistoryPage(): ReactElement {
                   <strong>视频任务 {video.id}</strong>
                   <span>状态：{video.status}</span>
                   <span>请求：{video.requestId}</span>
-                  {video.videoUrl ? <span>{video.videoUrl}</span> : null}
+                  {video.videoUrl ? (
+                    <VideoPreview url={video.videoUrl} label={`视频任务 ${video.id} 预览`} />
+                  ) : null}
                   {video.reason ? <span>{video.reason}</span> : null}
                   {canRefreshVideo(video.status) ? (
                     <div className="record-actions">
@@ -215,7 +217,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 }
 
 function canRefreshVideo(status: string): boolean {
-  return status === "InQueue" || status === "InProgress";
+  return status === "InQueue" || status === "InProgress" || status === "Succeed";
 }
 
 function getVideoRefreshStatus(status: string): string {
@@ -223,4 +225,15 @@ function getVideoRefreshStatus(status: string): string {
   if (status === "Failed") return "视频生成失败。";
 
   return `视频状态已刷新：${status}`;
+}
+
+function VideoPreview({ url, label }: { url: string; label: string }): ReactElement {
+  return (
+    <div className="video-preview-block">
+      <video className="video-preview" controls preload="metadata" src={url} aria-label={label} />
+      <div className="record-actions">
+        <a className="secondary-link" href={url} target="_blank" rel="noreferrer">打开视频</a>
+      </div>
+    </div>
+  );
 }
