@@ -266,6 +266,20 @@ function cleanListItem(value: string): string {
 }
 
 function normalizeExampleQuestion(value: unknown): unknown {
+  if (isRecord(value)) {
+    const question = readString(value.question) ?? readString(value.题目) ?? readString(value["问题"]);
+    const answer = readString(value.answer) ?? readString(value.solution) ?? readString(value["答案"]) ?? readString(value["解析"]);
+    if (question) {
+      return {
+        ...value,
+        question,
+        answer: answer ?? missingExampleAnswer
+      };
+    }
+
+    return value;
+  }
+
   if (typeof value !== "string") {
     return value;
   }

@@ -229,6 +229,34 @@ describe("generateLessonPlan", () => {
     });
   });
 
+  it("fills missing answers on object example questions instead of rejecting the full lesson", async () => {
+    const { markdown: _markdown, ...baseLesson } = completeLessonPlan();
+    const modelLesson = {
+      ...baseLesson,
+      example_questions: [
+        { question: "2x + 3 = 11，求 x 的值。" },
+        { question: "小明买笔共花 10 元，每支 2 元，买了几支？" }
+      ]
+    };
+    const fakeClient = {
+      chatCompletion: vi.fn(async () => JSON.stringify(modelLesson))
+    };
+
+    await expect(
+      generateLessonPlan({
+        topic: "一元一次方程",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({
+      example_questions: [
+        { question: "2x + 3 = 11，求 x 的值。", answer: "需教师补充答案" },
+        { question: "小明买笔共花 10 元，每支 2 元，买了几支？", answer: "需教师补充答案" }
+      ],
+      markdown: expect.stringContaining("答：需教师补充答案")
+    });
+  });
+
   it("throws a clear Chinese error when text model config is missing", async () => {
     const fakeClient = {
       chatCompletion: vi.fn(async () => JSON.stringify(completeLessonPlan()))
