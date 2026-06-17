@@ -6,6 +6,8 @@ import type {
   AppSettings,
   KnowledgeConnectionTestResult,
   LessonPlan,
+  LocalTeachingDemoInput,
+  LocalTeachingDemoResult,
   LocalQdrantStatus,
   ProblemDemoPlan,
   TextbookIndexItem,
@@ -115,6 +117,7 @@ type WorkflowDeps = {
   renderMotionDemoHtml(plan: ProblemDemoPlan): string;
   renderEquationDemoHtml(plan: ProblemDemoPlan): string;
   renderSimpleDemoHtml(plan: ProblemDemoPlan): string;
+  renderTeachingDemoHtml(input: LocalTeachingDemoInput & { title: string }): string;
   startDemoServer(rootDir: string): Promise<DemoServer>;
   openExternal(url: string): Promise<void>;
   exportLessonDocx(input: { filePath: string; lesson: LessonPlan }): Promise<void>;
@@ -150,6 +153,10 @@ const generateVideoInputSchema = z.object({
   imageDataUrl: optionalTrimmedStringSchema,
   imageSize: videoImageSizeSchema.default("1280x720"),
   negativePrompt: optionalTrimmedStringSchema
+});
+const localTeachingDemoInputSchema = z.object({
+  prompt: nonEmptyStringSchema,
+  script: optionalTrimmedStringSchema
 });
 const exportLessonInputSchema = z.object({
   id: z.string().trim().min(1),
@@ -207,24 +214,23 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
       createdAt
     });
 
-    let videoTask: VideoRecord | undefined;
-    let videoError: string | undefined;
-    if (settings.videoModel.apiKey.trim() && settings.videoModel.modelName.trim()) {
-      try {
-        const createdVideoTask = await deps.createVideoTaskFromLesson({
-          lessonId: id,
-          lesson,
-          config: settings.videoModel,
-          client: deps.client
-        });
-        await deps.historyStore.upsertVideo(createdVideoTask);
-        videoTask = createdVideoTask;
-      } catch (error) {
-        videoError = getErrorMessage(error);
-      }
+    let localDemo: LocalTeachingDemoResult | undefined;
+    let demoError: string | undefined;
+    try {
+      const demoResult = await generateLocalTeachingDemo({
+        prompt: lesson.video_prompt,
+        script: lesson.video_script
+      }, deps, activeDemoServer, {
+        id,
+        title: lesson.title
+      });
+      activeDemoServer = demoResult.activeDemoServer;
+      localDemo = demoResult.response;
+    } catch (error) {
+      demoError = getErrorMessage(error);
     }
 
-    return { id, lesson, videoTask, videoError };
+    return { id, lesson, localDemo, demoError };
   });
 
   ipcMainLike.handle("lesson:exportDocx", async (_event, input) => {
@@ -274,6 +280,24 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
     await deps.historyStore.upsertVideo(videoTask);
 
     return videoTask;
+  });
+
+  ipcMainLike.handle("video:generateLocalDemo", async (_event, input) => {
+    const queuedDemo = demoQueue.then(
+      () => generateLocalTeachingDemo(input, deps, activeDemoServer),
+      () => generateLocalTeachingDemo(input, deps, activeDemoServer)
+    );
+
+    demoQueue = queuedDemo
+      .then((result) => {
+        activeDemoServer = result.activeDemoServer;
+      })
+      .catch(() => undefined);
+
+    const result = await queuedDemo;
+    activeDemoServer = result.activeDemoServer;
+
+    return result.response;
   });
 
   ipcMainLike.handle("video:refresh", async (_event, videoIdInput) => {
@@ -429,6 +453,47 @@ async function generateDemo(
   }
 }
 
+async function generateLocalTeachingDemo(
+  input: unknown,
+  deps: WorkflowDeps,
+  activeDemoServer: DemoServer | undefined,
+  options: { id?: string; title?: string } = {}
+): Promise<{ response: LocalTeachingDemoResult; activeDemoServer: DemoServer }> {
+  const parsed = localTeachingDemoInputSchema.parse(input);
+  const id = options.id ?? deps.createId();
+  const title = options.title ?? createLocalDemoTitle(parsed.prompt);
+  const html = deps.renderTeachingDemoHtml({
+    title,
+    prompt: parsed.prompt,
+    script: parsed.script
+  });
+  const demoDir = join(deps.dataDir, "local-demos", id);
+
+  await mkdir(demoDir, { recursive: true });
+  await writeFile(join(demoDir, "index.html"), html, "utf8");
+
+  let newDemoServer: DemoServer | undefined;
+  try {
+    newDemoServer = await deps.startDemoServer(demoDir);
+    const url = newDemoServer.url;
+    await deps.openExternal(url);
+
+    const promotedDemoServer = newDemoServer;
+    newDemoServer = undefined;
+    if (activeDemoServer) {
+      await closeDemoServerQuietly(activeDemoServer);
+    }
+
+    return { response: { id, title, url }, activeDemoServer: promotedDemoServer };
+  } catch (error) {
+    if (newDemoServer) {
+      await newDemoServer.close();
+    }
+
+    throw error;
+  }
+}
+
 function renderDemoHtml(renderer: "motion" | "equation" | "simple", plan: ProblemDemoPlan, deps: WorkflowDeps): string {
   if (renderer === "motion") return deps.renderMotionDemoHtml(plan);
   if (renderer === "equation") return deps.renderEquationDemoHtml(plan);
@@ -454,6 +519,11 @@ function safeFileName(value: string): string {
     .slice(0, 80);
 
   return safe || "lesson";
+}
+
+function createLocalDemoTitle(prompt: string): string {
+  const compact = prompt.replace(/\s+/g, " ").trim();
+  return compact.slice(0, 80) || "本地教学演示";
 }
 
 function getErrorMessage(error: unknown): string {

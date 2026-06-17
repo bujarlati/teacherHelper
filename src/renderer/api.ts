@@ -3,6 +3,8 @@ import type {
   AppSettings,
   KnowledgeConnectionTestResult,
   LessonPlan,
+  LocalTeachingDemoInput,
+  LocalTeachingDemoResult,
   LocalQdrantStatus,
   ProblemDemoPlan,
   TextbookIndexItem,
@@ -17,6 +19,8 @@ export type LessonGenerateResult = {
   lesson: LessonPlan;
   videoTask?: VideoTask;
   videoError?: string;
+  localDemo?: LocalTeachingDemoResult;
+  demoError?: string;
 };
 
 export type DemoGenerateResult = {
@@ -48,6 +52,7 @@ export type TeacherHelperRendererApi = {
   generateLesson(topic: string): Promise<LessonGenerateResult>;
   exportLessonDocx(input: { id: string; title: string; lesson: LessonPlan }): Promise<string>;
   generateVideo(input: VideoGenerateInput): Promise<VideoRecord>;
+  generateLocalTeachingDemo(input: LocalTeachingDemoInput): Promise<LocalTeachingDemoResult>;
   generateDemo(problem: string): Promise<DemoGenerateResult>;
   refreshVideo(videoId: string): Promise<VideoRecord>;
   listHistory(): Promise<HistoryListResult>;
@@ -79,6 +84,7 @@ export const api: TeacherHelperRendererApi = {
   generateLesson: async (topic) => getApi().generateLesson(topic),
   exportLessonDocx: async (input) => getApi().exportLessonDocx(input),
   generateVideo: async (input) => getApi().generateVideo(input),
+  generateLocalTeachingDemo: async (input) => getApi().generateLocalTeachingDemo(input),
   generateDemo: async (problem) => getApi().generateDemo(problem),
   refreshVideo: async (videoId) => getApi().refreshVideo(videoId),
   listHistory: async () => getApi().listHistory()

@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import type { ReactElement } from "react";
-import type { LessonPlan, VideoTask } from "../../shared/types";
+import type { LessonPlan, LocalTeachingDemoResult, VideoTask } from "../../shared/types";
 import { api } from "../api";
 
 type StatusTone = "muted" | "success" | "error";
@@ -15,6 +15,8 @@ type LessonResult = {
   lesson: LessonPlan;
   videoTask?: VideoTask;
   videoError?: string;
+  localDemo?: LocalTeachingDemoResult;
+  demoError?: string;
 };
 
 type GenerationProgress = {
@@ -67,7 +69,7 @@ export function LessonPage(): ReactElement {
       const nextResult = await api.generateLesson(trimmedTopic);
       setResult(nextResult);
       setStatus({
-        tone: nextResult.videoError ? "error" : "success",
+        tone: nextResult.videoError || nextResult.demoError ? "error" : "success",
         text: getLessonGenerateStatus(nextResult)
       });
     } catch (error) {
@@ -171,6 +173,26 @@ export function LessonPage(): ReactElement {
         <p className="path-output" aria-label="导出路径">{exportPath}</p>
       ) : null}
 
+      {result?.localDemo ? (
+        <section className="result-section" aria-labelledby="lesson-demo-title">
+          <h2 id="lesson-demo-title">本地教学演示</h2>
+          <dl className="metadata-list">
+            <div>
+              <dt>标题</dt>
+              <dd>{result.localDemo.title}</dd>
+            </div>
+            <div>
+              <dt>预览</dt>
+              <dd>
+                <a className="secondary-link" href={result.localDemo.url} target="_blank" rel="noreferrer">
+                  打开本地教学演示
+                </a>
+              </dd>
+            </div>
+          </dl>
+        </section>
+      ) : null}
+
       {result ? (
         <section className="result-section" aria-labelledby="lesson-result-title">
           <h2 id="lesson-result-title">{result.lesson.title}</h2>
@@ -186,6 +208,12 @@ function getErrorMessage(error: unknown, fallback: string): string {
 }
 
 function getLessonGenerateStatus(result: LessonResult): string {
+  if (result.localDemo) {
+    return "教案已生成，本地教学演示已打开。";
+  }
+  if (result.demoError) {
+    return `教案已生成，本地教学演示生成失败：${result.demoError}`;
+  }
   if (result.videoTask) {
     return `视频任务已提交：${result.videoTask.status}`;
   }

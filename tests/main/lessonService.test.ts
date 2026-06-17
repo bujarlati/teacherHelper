@@ -176,6 +176,44 @@ describe("generateLessonPlan", () => {
     });
   });
 
+  it("normalizes object-shaped board design and homework suggestions from model output", async () => {
+    const { markdown: _markdown, ...baseLesson } = completeLessonPlan();
+    const modelLesson = {
+      ...baseLesson,
+      board_design: {
+        main: "Equation: 3x + 2 = 11",
+        steps: ["Subtract 2 from both sides", "Divide both sides by 3"]
+      },
+      homework_suggestions: [
+        { task: "Finish three equation-solving exercises" },
+        { content: "Write one common mistake and explain the reason" },
+        { title: "Preview", description: "Read the next section before class" }
+      ]
+    };
+    const fakeClient = {
+      chatCompletion: vi.fn(async () => JSON.stringify(modelLesson))
+    };
+
+    await expect(
+      generateLessonPlan({
+        topic: "linear equation",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({
+      board_design: [
+        "main: Equation: 3x + 2 = 11",
+        "steps: Subtract 2 from both sides；Divide both sides by 3"
+      ],
+      homework_suggestions: [
+        "task: Finish three equation-solving exercises",
+        "content: Write one common mistake and explain the reason",
+        "Preview：Read the next section before class"
+      ],
+      markdown: expect.stringContaining("Finish three equation-solving exercises")
+    });
+  });
+
   it("normalizes example questions that the model returns as strings", async () => {
     const { markdown: _markdown, ...baseLesson } = completeLessonPlan();
     const modelLesson = {

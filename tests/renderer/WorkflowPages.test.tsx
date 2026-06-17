@@ -83,9 +83,22 @@ describe("workflow pages", () => {
         indexTextbook: vi.fn(),
         listTextbooks: vi.fn().mockResolvedValue([textbook]),
         searchTextbooks: vi.fn().mockResolvedValue([textbookSearchResult]),
-        generateLesson: vi.fn().mockResolvedValue({ id: "lesson-1", lesson, videoTask }),
+        generateLesson: vi.fn().mockResolvedValue({
+          id: "lesson-1",
+          lesson,
+          localDemo: {
+            id: "local-demo-1",
+            title: lesson.title,
+            url: "http://127.0.0.1:8123/"
+          }
+        }),
         exportLessonDocx: vi.fn().mockResolvedValue("D:\\teacherHelper-data\\exports\\一次函数复习.docx"),
         generateVideo: vi.fn(),
+        generateLocalTeachingDemo: vi.fn().mockResolvedValue({
+          id: "local-demo-1",
+          title: "A stable local teaching demo",
+          url: "http://127.0.0.1:8123/"
+        }),
         generateDemo: vi.fn().mockResolvedValue({ id: "demo-1", plan: demoPlan, url: "http://127.0.0.1:4321/" }),
         refreshVideo: vi.fn(),
         listHistory: vi.fn()
@@ -118,7 +131,8 @@ describe("workflow pages", () => {
       expect(window.teacherHelper.generateLesson).toHaveBeenCalledWith("一次函数");
     });
     expect(await screen.findByText("# 一次函数复习", { exact: false })).toBeTruthy();
-    expect(screen.getByText("视频任务已提交：InQueue")).toBeTruthy();
+    expect(screen.getByText("教案已生成，本地教学演示已打开。")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "打开本地教学演示" }).getAttribute("href")).toBe("http://127.0.0.1:8123/");
 
     fireEvent.click(screen.getByRole("button", { name: "复制 Markdown" }));
     await waitFor(() => {
@@ -137,11 +151,11 @@ describe("workflow pages", () => {
     expect(await screen.findByText("D:\\teacherHelper-data\\exports\\一次函数复习.docx")).toBeTruthy();
   });
 
-  test("LessonPage keeps the generated lesson visible when video submission fails", async () => {
+  test("LessonPage keeps the generated lesson visible when local demo generation fails", async () => {
     window.teacherHelper.generateLesson = vi.fn().mockResolvedValue({
       id: "lesson-1",
       lesson,
-      videoError: "video quota exceeded"
+      demoError: "local preview failed"
     });
     const { LessonPage } = await import("../../src/renderer/pages/LessonPage");
 
@@ -151,7 +165,7 @@ describe("workflow pages", () => {
     fireEvent.click(screen.getByRole("button", { name: "生成教案" }));
 
     expect(await screen.findByText("# 一次函数复习", { exact: false })).toBeTruthy();
-    expect(screen.getByText("教案已生成，视频任务提交失败：video quota exceeded")).toBeTruthy();
+    expect(screen.getByText("教案已生成，本地教学演示生成失败：local preview failed")).toBeTruthy();
   });
 
   test("LessonPage shows progress, elapsed time, and slow-generation guidance while generating", async () => {
@@ -383,6 +397,32 @@ describe("workflow pages", () => {
       "https://cdn.example.test/video.mp4"
     );
     expect(screen.getByLabelText("生成视频预览").getAttribute("src")).toBe("https://cdn.example.test/video.mp4");
+  });
+
+  test("VideoPage generates a local teaching demo from the current prompt and script", async () => {
+    window.teacherHelper.generateLocalTeachingDemo = vi.fn().mockResolvedValue({
+      id: "local-demo-1",
+      title: "A stable local teaching demo",
+      url: "http://127.0.0.1:8123/"
+    });
+    const { VideoPage } = await import("../../src/renderer/pages/VideoPage");
+
+    render(<VideoPage />);
+
+    const textareas = document.querySelectorAll("textarea");
+    fireEvent.change(textareas[0], { target: { value: " A number line animation. " } });
+    fireEvent.change(textareas[1], { target: { value: " Show A then B. " } });
+    fireEvent.click(screen.getByRole("button", { name: "生成本地演示" }));
+
+    await waitFor(() => {
+      expect(window.teacherHelper.generateLocalTeachingDemo).toHaveBeenCalledWith({
+        prompt: "A number line animation.",
+        script: "Show A then B."
+      });
+    });
+    expect(await screen.findByText("本地教学演示已生成并打开。")).toBeTruthy();
+    expect(screen.getByText("A stable local teaching demo")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "打开本地演示" }).getAttribute("href")).toBe("http://127.0.0.1:8123/");
   });
 
   test("HistoryPage lists lesson, demo, and video records", async () => {

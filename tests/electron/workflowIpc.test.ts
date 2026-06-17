@@ -91,6 +91,7 @@ function createBaseDeps(overrides: Record<string, unknown> = {}) {
     renderMotionDemoHtml: vi.fn(),
     renderEquationDemoHtml: vi.fn().mockReturnValue("<!doctype html><title>demo</title>"),
     renderSimpleDemoHtml: vi.fn(),
+    renderTeachingDemoHtml: vi.fn().mockReturnValue("<!doctype html><title>local demo</title>"),
     startDemoServer: vi.fn(),
     openExternal: vi.fn().mockResolvedValue(undefined),
     exportLessonDocx: vi.fn(),
@@ -154,21 +155,14 @@ afterEach(async () => {
 });
 
 describe("registerWorkflowIpcHandlers", () => {
-  it("generates a lesson, saves it, and submits a video task when video config is present", async () => {
+  it("generates a lesson, saves it, and opens a local teaching demo", async () => {
     const fakeIpcMain = createFakeIpcMain();
     const addedLessons: LessonRecord[] = [];
     const upsertedVideos: VideoRecord[] = [];
     const createdAt = "2026-06-15T01:02:03.000Z";
-    const videoTask: VideoRecord = {
-      id: "video-1",
-      lessonId: "lesson-1",
-      requestId: "request-1",
-      status: "InQueue",
-      prompt: lesson.video_prompt,
-      script: lesson.video_script,
-      createdAt,
-      updatedAt: createdAt
-    };
+    const createVideoTaskFromLesson = vi.fn();
+    const renderTeachingDemoHtml = vi.fn().mockReturnValue("<!doctype html><title>lesson demo</title>");
+    const openExternal = vi.fn().mockResolvedValue(undefined);
 
     registerWorkflowIpcHandlers(fakeIpcMain, {
       configStore: { load: vi.fn().mockResolvedValue(completeSettings) },
@@ -185,21 +179,30 @@ describe("registerWorkflowIpcHandlers", () => {
       createId: () => "lesson-1",
       now: () => createdAt,
       generateLessonPlan: vi.fn().mockResolvedValue(lesson),
-      createVideoTaskFromLesson: vi.fn().mockResolvedValue(videoTask),
+      createVideoTaskFromLesson,
       refreshVideoTaskStatus: vi.fn(),
       analyzeProblemForDemo: vi.fn(),
       chooseDemoRenderer: vi.fn(),
       renderMotionDemoHtml: vi.fn(),
       renderEquationDemoHtml: vi.fn(),
       renderSimpleDemoHtml: vi.fn(),
-      startDemoServer: vi.fn(),
-      openExternal: vi.fn(),
+      renderTeachingDemoHtml,
+      startDemoServer: vi.fn().mockResolvedValue({ url: "http://127.0.0.1:8123/", close: vi.fn() }),
+      openExternal,
       exportLessonDocx: vi.fn()
     });
 
     const result = await fakeIpcMain.handlers.get("lesson:generate")?.({}, " 一次函数 ");
 
-    expect(result).toEqual({ id: "lesson-1", lesson, videoTask });
+    expect(result).toEqual({
+      id: "lesson-1",
+      lesson,
+      localDemo: {
+        id: "lesson-1",
+        title: lesson.title,
+        url: "http://127.0.0.1:8123/"
+      }
+    });
     expect(addedLessons).toEqual([{
       id: "lesson-1",
       title: lesson.title,
@@ -207,10 +210,18 @@ describe("registerWorkflowIpcHandlers", () => {
       markdown: lesson.markdown,
       createdAt
     }]);
-    expect(upsertedVideos).toEqual([videoTask]);
+    expect(renderTeachingDemoHtml).toHaveBeenCalledWith({
+      title: lesson.title,
+      prompt: lesson.video_prompt,
+      script: lesson.video_script
+    });
+    await expect(readFile(join(tmpDir, "local-demos", "lesson-1", "index.html"), "utf8")).resolves.toContain("lesson demo");
+    expect(openExternal).toHaveBeenCalledWith("http://127.0.0.1:8123/");
+    expect(createVideoTaskFromLesson).not.toHaveBeenCalled();
+    expect(upsertedVideos).toEqual([]);
   });
 
-  it("returns a lesson with a video error when video submission fails", async () => {
+  it("returns a lesson with a local demo error when local demo generation fails", async () => {
     const fakeIpcMain = createFakeIpcMain();
     const addedLessons: LessonRecord[] = [];
     const upsertVideo = vi.fn();
@@ -227,13 +238,13 @@ describe("registerWorkflowIpcHandlers", () => {
       createId: () => "lesson-1",
       now: () => "2026-06-15T01:02:03.000Z",
       generateLessonPlan: vi.fn().mockResolvedValue(lesson),
-      createVideoTaskFromLesson: vi.fn().mockRejectedValue(new Error("video quota exceeded"))
+      startDemoServer: vi.fn().mockRejectedValue(new Error("local preview failed"))
     }));
 
     await expect(fakeIpcMain.handlers.get("lesson:generate")?.({}, " 一次函数 ")).resolves.toEqual({
       id: "lesson-1",
       lesson,
-      videoError: "video quota exceeded"
+      demoError: "local preview failed"
     });
     expect(addedLessons).toEqual([{
       id: "lesson-1",
@@ -293,40 +304,73 @@ describe("registerWorkflowIpcHandlers", () => {
     expect(upsertVideo).toHaveBeenCalledWith(videoTask);
   });
 
-  it("returns only a video error when saving a created video task fails", async () => {
+  it("generates a local teaching demo without creating a provider video task", async () => {
     const fakeIpcMain = createFakeIpcMain();
-    const createdAt = "2026-06-15T01:02:03.000Z";
-    const videoTask: VideoRecord = {
-      id: "video-1",
-      lessonId: "lesson-1",
-      requestId: "request-1",
-      status: "InQueue",
-      prompt: lesson.video_prompt,
-      script: lesson.video_script,
-      createdAt,
-      updatedAt: createdAt
-    };
+    const renderTeachingDemoHtml = vi.fn().mockReturnValue("<!doctype html><title>local demo</title>");
+    const createStandaloneVideoTask = vi.fn();
+    const openExternal = vi.fn().mockResolvedValue(undefined);
+    const deps = createBaseDeps({
+      createId: () => "local-demo-1",
+      renderTeachingDemoHtml,
+      createStandaloneVideoTask,
+      startDemoServer: vi.fn().mockResolvedValue({
+        url: "http://127.0.0.1:8123/",
+        close: vi.fn()
+      }),
+      openExternal
+    });
+
+    registerWorkflowIpcHandlers(fakeIpcMain, deps);
+
+    await expect(fakeIpcMain.handlers.get("video:generateLocalDemo")?.({}, {
+      prompt: " Show A + B on a number line. ",
+      script: " Draw A. Draw B. "
+    })).resolves.toEqual({
+      id: "local-demo-1",
+      title: "Show A + B on a number line.",
+      url: "http://127.0.0.1:8123/"
+    });
+    expect(renderTeachingDemoHtml).toHaveBeenCalledWith({
+      title: "Show A + B on a number line.",
+      prompt: "Show A + B on a number line.",
+      script: "Draw A. Draw B."
+    });
+    await expect(readFile(join(tmpDir, "local-demos", "local-demo-1", "index.html"), "utf8")).resolves.toContain("local demo");
+    expect(openExternal).toHaveBeenCalledWith("http://127.0.0.1:8123/");
+    expect(createStandaloneVideoTask).not.toHaveBeenCalled();
+  });
+
+  it("does not submit a provider video task while generating a lesson", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const createVideoTaskFromLesson = vi.fn();
+    const upsertVideo = vi.fn();
 
     registerWorkflowIpcHandlers(fakeIpcMain, createBaseDeps({
       historyStore: {
         addLesson: vi.fn(),
         addDemo: vi.fn(),
-        upsertVideo: vi.fn().mockRejectedValue(new Error("history write failed")),
+        upsertVideo,
         listLessons: vi.fn(),
         listDemos: vi.fn(),
         listVideos: vi.fn()
       },
       createId: () => "lesson-1",
-      now: () => createdAt,
       generateLessonPlan: vi.fn().mockResolvedValue(lesson),
-      createVideoTaskFromLesson: vi.fn().mockResolvedValue(videoTask)
+      createVideoTaskFromLesson,
+      startDemoServer: vi.fn().mockResolvedValue({ url: "http://127.0.0.1:8123/", close: vi.fn() })
     }));
 
     await expect(fakeIpcMain.handlers.get("lesson:generate")?.({}, " 一次函数 ")).resolves.toEqual({
       id: "lesson-1",
       lesson,
-      videoError: "history write failed"
+      localDemo: {
+        id: "lesson-1",
+        title: lesson.title,
+        url: "http://127.0.0.1:8123/"
+      }
     });
+    expect(createVideoTaskFromLesson).not.toHaveBeenCalled();
+    expect(upsertVideo).not.toHaveBeenCalled();
   });
 
   it("generates a demo, writes index.html, starts the server, opens the URL, and saves demo history", async () => {
@@ -358,6 +402,7 @@ describe("registerWorkflowIpcHandlers", () => {
       renderMotionDemoHtml: vi.fn(),
       renderEquationDemoHtml: vi.fn().mockReturnValue("<!doctype html><title>demo</title>"),
       renderSimpleDemoHtml: vi.fn(),
+      renderTeachingDemoHtml: vi.fn(),
       startDemoServer: vi.fn().mockResolvedValue({ url: "http://127.0.0.1:4321/", close: closeActiveServer }),
       openExternal,
       exportLessonDocx: vi.fn()
@@ -502,6 +547,7 @@ describe("registerWorkflowIpcHandlers", () => {
       renderMotionDemoHtml: vi.fn(),
       renderEquationDemoHtml: vi.fn(),
       renderSimpleDemoHtml: vi.fn(),
+      renderTeachingDemoHtml: vi.fn(),
       startDemoServer: vi.fn(),
       openExternal: vi.fn(),
       exportLessonDocx
@@ -598,6 +644,7 @@ describe("registerWorkflowIpcHandlers", () => {
       renderMotionDemoHtml: vi.fn(),
       renderEquationDemoHtml: vi.fn(),
       renderSimpleDemoHtml: vi.fn(),
+      renderTeachingDemoHtml: vi.fn(),
       startDemoServer: vi.fn(),
       openExternal: vi.fn(),
       exportLessonDocx: vi.fn()

@@ -1,6 +1,6 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import type { ReactElement } from "react";
-import type { VideoImageSize } from "../../shared/types";
+import type { LocalTeachingDemoResult, VideoImageSize } from "../../shared/types";
 import type { VideoRecord } from "../../main/historyStore";
 import { api } from "../api";
 
@@ -23,11 +23,13 @@ export function VideoPage(): ReactElement {
   const [negativePrompt, setNegativePrompt] = useState("");
   const [imageFile, setImageFile] = useState<File | undefined>();
   const [video, setVideo] = useState<VideoRecord | undefined>();
+  const [localDemo, setLocalDemo] = useState<LocalTeachingDemoResult | undefined>();
   const [status, setStatus] = useState<StatusMessage>({ tone: "muted", text: "输入提示词后生成视频。" });
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isGeneratingLocalDemo, setIsGeneratingLocalDemo] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const isBusy = isGenerating || isRefreshing;
+  const isBusy = isGenerating || isGeneratingLocalDemo || isRefreshing;
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), queueClockRefreshMs);
@@ -81,6 +83,32 @@ export function VideoPage(): ReactElement {
     if (!video) return;
 
     await refreshVideoById(video.id, false);
+  }
+
+  async function handleGenerateLocalDemo(): Promise<void> {
+    const trimmedPrompt = prompt.trim();
+
+    if (!trimmedPrompt) {
+      setStatus({ tone: "error", text: "请先输入视频提示词。" });
+      return;
+    }
+
+    setIsGeneratingLocalDemo(true);
+    setStatus({ tone: "muted", text: "正在生成本地教学演示..." });
+
+    try {
+      const nextDemo = await api.generateLocalTeachingDemo({
+        prompt: trimmedPrompt,
+        script: script.trim() || undefined
+      });
+
+      setLocalDemo(nextDemo);
+      setStatus({ tone: "success", text: "本地教学演示已生成并打开。" });
+    } catch (error) {
+      setStatus({ tone: "error", text: getErrorMessage(error, "生成本地教学演示失败。") });
+    } finally {
+      setIsGeneratingLocalDemo(false);
+    }
   }
 
   async function refreshVideoById(videoId: string, automatic: boolean): Promise<void> {
@@ -166,6 +194,9 @@ export function VideoPage(): ReactElement {
         </label>
         <div className="form-actions">
           <button type="submit" disabled={isBusy}>生成视频</button>
+          <button type="button" className="secondary-button" disabled={isBusy} onClick={() => void handleGenerateLocalDemo()}>
+            生成本地演示
+          </button>
           <button type="button" className="secondary-button" disabled={isBusy || !video} onClick={() => void handleRefresh()}>
             刷新状态
           </button>
@@ -173,6 +204,24 @@ export function VideoPage(): ReactElement {
       </form>
 
       {imageFile ? <p className="path-output">参考图片：{imageFile.name}</p> : null}
+
+      {localDemo ? (
+        <section className="result-section" aria-labelledby="local-demo-result-title">
+          <h2 id="local-demo-result-title">本地教学演示</h2>
+          <dl className="metadata-list">
+            <div>
+              <dt>标题</dt>
+              <dd>{localDemo.title}</dd>
+            </div>
+            <div>
+              <dt>预览</dt>
+              <dd>
+                <a className="secondary-link" href={localDemo.url} target="_blank" rel="noreferrer">打开本地演示</a>
+              </dd>
+            </div>
+          </dl>
+        </section>
+      ) : null}
 
       {video ? (
         <section className="result-section" aria-labelledby="video-result-title">

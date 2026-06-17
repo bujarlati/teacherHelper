@@ -3,6 +3,8 @@ import type {
   AppSettings,
   KnowledgeConnectionTestResult,
   LessonPlan,
+  LocalTeachingDemoInput,
+  LocalTeachingDemoResult,
   LocalQdrantStatus,
   ProblemDemoPlan,
   TextbookIndexItem,
@@ -27,9 +29,17 @@ export type TeacherHelperApi = {
   }): Promise<TextbookRecord>;
   listTextbooks(): Promise<TextbookRecord[]>;
   searchTextbooks(input: { query: string; limit?: number }): Promise<TextbookSearchResult[]>;
-  generateLesson(topic: string): Promise<{ id: string; lesson: LessonPlan; videoTask?: VideoTask; videoError?: string }>;
+  generateLesson(topic: string): Promise<{
+    id: string;
+    lesson: LessonPlan;
+    videoTask?: VideoTask;
+    videoError?: string;
+    localDemo?: LocalTeachingDemoResult;
+    demoError?: string;
+  }>;
   exportLessonDocx(input: { id: string; title: string; lesson: LessonPlan }): Promise<string>;
   generateVideo(input: VideoGenerateInput): Promise<VideoRecord>;
+  generateLocalTeachingDemo(input: LocalTeachingDemoInput): Promise<LocalTeachingDemoResult>;
   generateDemo(problem: string): Promise<{ id: string; plan: ProblemDemoPlan; url: string }>;
   refreshVideo(videoId: string): Promise<VideoRecord>;
   listHistory(): Promise<{ lessons: LessonRecord[]; demos: DemoRecord[]; videos: VideoRecord[] }>;
@@ -49,9 +59,12 @@ const teacherHelperApi: TeacherHelperApi = {
     lesson: LessonPlan;
     videoTask?: VideoTask;
     videoError?: string;
+    localDemo?: LocalTeachingDemoResult;
+    demoError?: string;
   }>,
   exportLessonDocx: (input) => ipcRenderer.invoke("lesson:exportDocx", input) as Promise<string>,
   generateVideo: (input) => ipcRenderer.invoke("video:generate", input) as Promise<VideoRecord>,
+  generateLocalTeachingDemo: (input) => ipcRenderer.invoke("video:generateLocalDemo", input) as Promise<LocalTeachingDemoResult>,
   generateDemo: (problem) => ipcRenderer.invoke("demo:generate", problem) as Promise<{
     id: string;
     plan: ProblemDemoPlan;

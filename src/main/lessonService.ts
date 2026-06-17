@@ -178,8 +178,21 @@ function normalizeStringList(value: unknown): unknown {
 
   if (Array.isArray(value)) {
     return value
-      .map((item) => (typeof item === "string" ? cleanListItem(item) : item))
+      .map((item) => {
+        if (typeof item === "string") {
+          return cleanListItem(item);
+        }
+        if (isRecord(item) && !("question" in item)) {
+          return stringifyListRecord(item);
+        }
+
+        return item;
+      })
       .filter((item) => typeof item !== "string" || item.length > 0);
+  }
+
+  if (isRecord(value)) {
+    return stringifyListRecordEntries(value);
   }
 
   return value;
@@ -255,6 +268,43 @@ function readFirstQuestion(value: unknown): string | undefined {
 
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function stringifyListRecord(value: Record<string, unknown>): string {
+  const title = readString(value.title);
+  const description = readString(value.description) ?? readString(value.content) ?? readString(value.task);
+  if (title && description) {
+    return `${title}：${description}`;
+  }
+
+  const entries = stringifyListRecordEntries(value);
+  return entries.join("；");
+}
+
+function stringifyListRecordEntries(value: Record<string, unknown>): string[] {
+  return Object.entries(value)
+    .map(([key, item]) => {
+      const text = stringifyListValue(item);
+      return text ? `${key}: ${text}` : "";
+    })
+    .filter(Boolean);
+}
+
+function stringifyListValue(value: unknown): string {
+  if (typeof value === "string") {
+    return cleanListItem(value);
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(stringifyListValue).filter(Boolean).join("；");
+  }
+  if (isRecord(value)) {
+    return stringifyListRecord(value);
+  }
+
+  return "";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

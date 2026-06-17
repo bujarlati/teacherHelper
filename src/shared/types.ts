@@ -91,6 +91,17 @@ export type VideoGenerateInput = {
   negativePrompt?: string;
 };
 
+export type LocalTeachingDemoInput = {
+  prompt: string;
+  script?: string;
+};
+
+export type LocalTeachingDemoResult = {
+  id: string;
+  title: string;
+  url: string;
+};
+
 export type VideoTask = {
   id: string;
   requestId: string;

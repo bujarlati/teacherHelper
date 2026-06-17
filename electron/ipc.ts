@@ -7,6 +7,7 @@ import { startDemoServer } from "../src/main/demo/demoServer.js";
 import { renderEquationDemoHtml } from "../src/main/demo/renderEquationDemo.js";
 import { renderMotionDemoHtml } from "../src/main/demo/renderMotionDemo.js";
 import { renderSimpleDemoHtml } from "../src/main/demo/renderSimpleDemo.js";
+import { renderTeachingDemoHtml } from "../src/main/demo/renderTeachingDemo.js";
 import { createHistoryStore } from "../src/main/historyStore.js";
 import { testKnowledgeConnections } from "../src/main/knowledgeConnectionService.js";
 import { generateLessonPlan } from "../src/main/lessonService.js";
@@ -61,6 +62,7 @@ export function registerIpcHandlers(): void {
     renderMotionDemoHtml,
     renderEquationDemoHtml,
     renderSimpleDemoHtml,
+    renderTeachingDemoHtml,
     startDemoServer,
     openExternal: (url) => shell.openExternal(url),
     exportLessonDocx,
