@@ -164,6 +164,13 @@ h1 {
   color: #a34035;
 }
 
+.inline-warning {
+  display: block;
+  margin-top: 4px;
+  color: #a34035;
+  font-weight: 600;
+}
+
 .settings-form {
   display: grid;
   gap: 22px;

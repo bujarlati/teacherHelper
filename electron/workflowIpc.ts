@@ -101,6 +101,11 @@ type WorkflowDeps = {
     client: unknown;
     now: () => string;
   }): Promise<VideoRecord>;
+  downloadVideoFile?(input: {
+    dataDir: string;
+    videoId: string;
+    videoUrl: string;
+  }): Promise<string>;
   analyzeProblemForDemo(input: {
     problem: string;
     config: AppSettings["textModel"];
@@ -286,9 +291,10 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
       client: deps.client,
       now: deps.now
     });
-    await deps.historyStore.upsertVideo(updatedVideo);
+    const savedVideo = await saveCompletedVideoLocally(updatedVideo, deps);
+    await deps.historyStore.upsertVideo(savedVideo);
 
-    return updatedVideo;
+    return savedVideo;
   });
 
   ipcMainLike.handle("knowledge:testConnections", async () => {
@@ -452,6 +458,31 @@ function safeFileName(value: string): string {
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error && error.message ? error.message : "视频任务提交失败。";
+}
+
+async function saveCompletedVideoLocally(video: VideoRecord, deps: WorkflowDeps): Promise<VideoRecord> {
+  if (video.status !== "Succeed" || !video.videoUrl || video.localVideoPath || !deps.downloadVideoFile) {
+    return video;
+  }
+
+  try {
+    const localVideoPath = await deps.downloadVideoFile({
+      dataDir: deps.dataDir,
+      videoId: video.id,
+      videoUrl: video.videoUrl
+    });
+
+    return {
+      ...video,
+      localVideoPath,
+      reason: undefined
+    };
+  } catch (error) {
+    return {
+      ...video,
+      reason: `视频已生成，但下载到本地失败：${getErrorMessage(error)}。请尽快打开视频链接保存。`
+    };
+  }
 }
 
 async function closeDemoServerQuietly(server: DemoServer): Promise<void> {

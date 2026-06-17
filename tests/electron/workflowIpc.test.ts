@@ -624,8 +624,13 @@ describe("registerWorkflowIpcHandlers", () => {
       videoUrl: "https://cdn.example.test/video.mp4",
       updatedAt: "2026-06-15T04:05:06.000Z"
     };
+    const downloadedVideo: VideoRecord = {
+      ...refreshedVideo,
+      localVideoPath: join(tmpDir, "videos", "video-1.mp4")
+    };
     const upsertVideo = vi.fn().mockResolvedValue(undefined);
     const refreshVideoTaskStatus = vi.fn().mockResolvedValue(refreshedVideo);
+    const downloadVideoFile = vi.fn().mockResolvedValue(downloadedVideo.localVideoPath);
     const deps = createBaseDeps({
       historyStore: {
         addLesson: vi.fn(),
@@ -635,21 +640,27 @@ describe("registerWorkflowIpcHandlers", () => {
         listDemos: vi.fn(),
         listVideos: vi.fn().mockResolvedValue([queuedVideo])
       },
-      refreshVideoTaskStatus
+      refreshVideoTaskStatus,
+      downloadVideoFile
     });
 
     registerWorkflowIpcHandlers(fakeIpcMain, deps);
     const handler = fakeIpcMain.handlers.get("video:refresh");
 
     expect(handler).toBeDefined();
-    await expect(handler?.({}, " video-1 ")).resolves.toEqual(refreshedVideo);
+    await expect(handler?.({}, " video-1 ")).resolves.toEqual(downloadedVideo);
     expect(refreshVideoTaskStatus).toHaveBeenCalledWith({
       task: queuedVideo,
       config: completeSettings.videoModel,
       client: deps.client,
       now: deps.now
     });
-    expect(upsertVideo).toHaveBeenCalledWith(refreshedVideo);
+    expect(downloadVideoFile).toHaveBeenCalledWith({
+      dataDir: tmpDir,
+      videoId: "video-1",
+      videoUrl: "https://cdn.example.test/video.mp4"
+    });
+    expect(upsertVideo).toHaveBeenCalledWith(downloadedVideo);
   });
 
   it("tests knowledge connections using current settings", async () => {

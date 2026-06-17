@@ -30,6 +30,7 @@ export type VideoRecord = {
   imageSize?: string;
   negativePrompt?: string;
   videoUrl?: string;
+  localVideoPath?: string;
   reason?: string;
   createdAt: string;
   updatedAt: string;

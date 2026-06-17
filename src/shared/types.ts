@@ -100,6 +100,7 @@ export type VideoTask = {
   imageSize?: string;
   negativePrompt?: string;
   videoUrl?: string;
+  localVideoPath?: string;
   reason?: string;
   createdAt: string;
   updatedAt: string;

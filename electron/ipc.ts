@@ -16,6 +16,7 @@ import { createQdrantClient } from "../src/main/qdrantClient.js";
 import { createSiliconFlowClient } from "../src/main/siliconflowClient.js";
 import { indexTextbook, searchTextbookIndex } from "../src/main/textbookIndexService.js";
 import { createTextbookStore } from "../src/main/textbookStore.js";
+import { downloadVideoFile } from "../src/main/videoDownloadService.js";
 import { createStandaloneVideoTask, createVideoTaskFromLesson, refreshVideoTaskStatus } from "../src/main/videoWorkflow.js";
 import { registerSettingsIpcHandlers } from "./settingsIpc.js";
 import { registerWorkflowIpcHandlers } from "./workflowIpc.js";
@@ -54,6 +55,7 @@ export function registerIpcHandlers(): void {
     createVideoTaskFromLesson,
     createStandaloneVideoTask,
     refreshVideoTaskStatus,
+    downloadVideoFile,
     analyzeProblemForDemo,
     chooseDemoRenderer,
     renderMotionDemoHtml,

@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import type { ReactElement } from "react";
 import type { VideoImageSize } from "../../shared/types";
 import type { VideoRecord } from "../../main/historyStore";
@@ -12,6 +12,9 @@ type StatusMessage = {
 };
 
 const imageSizes: VideoImageSize[] = ["1280x720", "720x1280", "960x960"];
+const videoAutoRefreshMs = 30_000;
+const queueClockRefreshMs = 60_000;
+const longQueueWarningMinutes = 30;
 
 export function VideoPage(): ReactElement {
   const [prompt, setPrompt] = useState("");
@@ -23,7 +26,25 @@ export function VideoPage(): ReactElement {
   const [status, setStatus] = useState<StatusMessage>({ tone: "muted", text: "输入提示词后生成视频。" });
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const isBusy = isGenerating || isRefreshing;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), queueClockRefreshMs);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!video || !canAutoRefreshVideo(video.status) || isGenerating || isRefreshing) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      void refreshVideoById(video.id, true);
+    }, videoAutoRefreshMs);
+
+    return () => window.clearTimeout(timer);
+  }, [video?.id, video?.status, video?.updatedAt, isGenerating, isRefreshing]);
 
   async function handleGenerate(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -59,15 +80,19 @@ export function VideoPage(): ReactElement {
   async function handleRefresh(): Promise<void> {
     if (!video) return;
 
+    await refreshVideoById(video.id, false);
+  }
+
+  async function refreshVideoById(videoId: string, automatic: boolean): Promise<void> {
     setIsRefreshing(true);
-    setStatus({ tone: "muted", text: "正在刷新视频状态..." });
+    setStatus({ tone: "muted", text: automatic ? "正在自动刷新视频状态..." : "正在刷新视频状态..." });
 
     try {
-      const nextVideo = await api.refreshVideo(video.id);
+      const nextVideo = await api.refreshVideo(videoId);
       setVideo(nextVideo);
       setStatus({
         tone: nextVideo.status === "Failed" ? "error" : "success",
-        text: getVideoRefreshStatus(nextVideo)
+        text: getVideoRefreshStatus(nextVideo, automatic)
       });
     } catch (error) {
       setStatus({ tone: "error", text: getErrorMessage(error, "刷新视频状态失败。") });
@@ -165,12 +190,29 @@ export function VideoPage(): ReactElement {
               <dt>尺寸</dt>
               <dd>{video.imageSize ?? imageSize}</dd>
             </div>
+            {canAutoRefreshVideo(video.status) ? (
+              <div>
+                <dt>排队</dt>
+                <dd>
+                  {formatQueueDuration(video.createdAt, nowMs)}
+                  {isLongQueued(video.createdAt, nowMs) ? (
+                    <span className="inline-warning">排队超过 30 分钟，可能服务商拥堵，建议重试或换模型。</span>
+                  ) : null}
+                </dd>
+              </div>
+            ) : null}
             {video.videoUrl ? (
               <div>
                 <dt>视频</dt>
                 <dd>
-                  <VideoPreview url={video.videoUrl} />
+                  <VideoPreview video={video} />
                 </dd>
+              </div>
+            ) : null}
+            {video.localVideoPath ? (
+              <div>
+                <dt>本地</dt>
+                <dd>{video.localVideoPath}</dd>
               </div>
             ) : null}
             {video.reason ? (
@@ -206,14 +248,16 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
-function getVideoRefreshStatus(video: VideoRecord): string {
-  if (video.status === "Succeed") return "视频已生成。";
+function getVideoRefreshStatus(video: VideoRecord, automatic = false): string {
+  if (video.status === "Succeed") return video.localVideoPath ? "视频已生成并保存到本地。" : "视频已生成。";
   if (video.status === "Failed") return "视频生成失败。";
 
-  return `视频状态已刷新：${video.status}`;
+  return `${automatic ? "自动刷新" : "视频状态已刷新"}：${video.status}`;
 }
 
-function VideoPreview({ url }: { url: string }): ReactElement {
+function VideoPreview({ video }: { video: VideoRecord }): ReactElement {
+  const url = getVideoPlaybackUrl(video);
+
   return (
     <div className="video-preview-block">
       <video className="video-preview" controls preload="metadata" src={url} aria-label="生成视频预览" />
@@ -222,4 +266,50 @@ function VideoPreview({ url }: { url: string }): ReactElement {
       </div>
     </div>
   );
+}
+
+function canAutoRefreshVideo(status: string): boolean {
+  return status === "InQueue" || status === "InProgress";
+}
+
+function formatQueueDuration(createdAt: string, nowMs: number): string {
+  const minutes = getQueueMinutes(createdAt, nowMs);
+  if (minutes < 1) return "排队：不足 1 分钟";
+  if (minutes < 60) return `排队：${minutes} 分钟`;
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes === 0 ? `排队：${hours} 小时` : `排队：${hours} 小时 ${remainingMinutes} 分钟`;
+}
+
+function isLongQueued(createdAt: string, nowMs: number): boolean {
+  return getQueueMinutes(createdAt, nowMs) >= longQueueWarningMinutes;
+}
+
+function getQueueMinutes(createdAt: string, nowMs: number): number {
+  const createdMs = new Date(createdAt).getTime();
+  if (Number.isNaN(createdMs)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.floor((nowMs - createdMs) / 60_000));
+}
+
+function getVideoPlaybackUrl(video: VideoRecord): string {
+  return video.localVideoPath ? toFileUrl(video.localVideoPath) : video.videoUrl ?? "";
+}
+
+function toFileUrl(filePath: string): string {
+  if (filePath.startsWith("file://")) {
+    return filePath;
+  }
+
+  const normalized = filePath.replace(/\\/g, "/");
+  const prefix = normalized.startsWith("/") ? "file://" : "file:///";
+  const encoded = normalized
+    .split("/")
+    .map((segment, index) => (index === 0 && /^[A-Za-z]:$/.test(segment) ? segment : encodeURIComponent(segment)))
+    .join("/");
+
+  return `${prefix}${encoded}`;
 }

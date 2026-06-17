@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { LessonPlan, ProblemDemoPlan, VideoTask } from "../../src/shared/types";
 import type { TextbookRecord, TextbookSearchResult } from "../../src/shared/types";
@@ -495,6 +495,50 @@ describe("workflow pages", () => {
     expect(screen.getByText("视频已生成。")).toBeTruthy();
   });
 
+  test("VideoPage automatically refreshes a queued video and plays the downloaded local copy", async () => {
+    vi.useFakeTimers();
+    const queuedVideo: VideoRecord = {
+      id: "video-standalone-1",
+      requestId: "request-video-1",
+      status: "InQueue",
+      prompt: "A number line animation.",
+      script: "Show A then B.",
+      imageSize: "960x960",
+      createdAt: "2026-06-15T03:04:05.000Z",
+      updatedAt: "2026-06-15T03:04:05.000Z"
+    };
+    const finishedVideo: VideoRecord = {
+      ...queuedVideo,
+      status: "Succeed",
+      videoUrl: "https://cdn.example.test/video.mp4",
+      localVideoPath: "D:\\teacherHelper-data\\videos\\video-standalone-1.mp4",
+      updatedAt: "2026-06-15T04:05:06.000Z"
+    };
+    window.teacherHelper.generateVideo = vi.fn().mockResolvedValue(queuedVideo);
+    window.teacherHelper.refreshVideo = vi.fn().mockResolvedValue(finishedVideo);
+    const { VideoPage } = await import("../../src/renderer/pages/VideoPage");
+
+    render(<VideoPage />);
+
+    fireEvent.change(screen.getByLabelText("提示词"), { target: { value: "A number line animation." } });
+    fireEvent.click(screen.getByRole("button", { name: "生成视频" }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("视频任务已提交：InQueue")).toBeTruthy();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(window.teacherHelper.refreshVideo).toHaveBeenCalledWith("video-standalone-1");
+    expect(screen.getByLabelText("生成视频预览").getAttribute("src")).toBe(
+      "file:///D:/teacherHelper-data/videos/video-standalone-1.mp4"
+    );
+    expect(screen.getByRole("link", { name: "打开视频" }).getAttribute("href")).toBe(
+      "file:///D:/teacherHelper-data/videos/video-standalone-1.mp4"
+    );
+  });
+
   test("HistoryPage previews saved videos and refreshes completed video links", async () => {
     const finishedVideo: VideoRecord = {
       id: "video-1",
@@ -540,6 +584,51 @@ describe("workflow pages", () => {
     );
     expect(screen.getByLabelText("视频任务 video-1 预览").getAttribute("src")).toBe(
       "https://cdn.example.test/new-video.mp4"
+    );
+  });
+
+  test("HistoryPage shows long queue warnings and auto-refreshes queued videos", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-15T04:00:00.000Z"));
+    const queuedVideo: VideoRecord = {
+      id: "video-1",
+      lessonId: "lesson-1",
+      requestId: "request-1",
+      status: "InQueue",
+      prompt: "prompt",
+      script: "script",
+      createdAt: "2026-06-15T03:20:00.000Z",
+      updatedAt: "2026-06-15T03:20:00.000Z"
+    };
+    const refreshedVideo: VideoRecord = {
+      ...queuedVideo,
+      status: "Succeed",
+      videoUrl: "https://cdn.example.test/video.mp4",
+      localVideoPath: "D:\\teacherHelper-data\\videos\\video-1.mp4",
+      updatedAt: "2026-06-15T04:00:30.000Z"
+    };
+    window.teacherHelper.listHistory = vi.fn().mockResolvedValue({
+      lessons: [],
+      demos: [],
+      videos: [queuedVideo]
+    });
+    window.teacherHelper.refreshVideo = vi.fn().mockResolvedValue(refreshedVideo);
+    const { HistoryPage } = await import("../../src/renderer/pages/HistoryPage");
+
+    render(<HistoryPage />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("排队：40 分钟")).toBeTruthy();
+    expect(screen.getByText("排队超过 30 分钟，可能服务商拥堵，建议重试或换模型。")).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(window.teacherHelper.refreshVideo).toHaveBeenCalledWith("video-1");
+    expect(screen.getByLabelText("视频任务 video-1 预览").getAttribute("src")).toBe(
+      "file:///D:/teacherHelper-data/videos/video-1.mp4"
     );
   });
 });

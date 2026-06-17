@@ -11,14 +11,20 @@ type StatusMessage = {
 };
 
 type LessonHistoryItem = HistoryListResult["lessons"][number];
+type VideoHistoryItem = HistoryListResult["videos"][number];
+
+const videoAutoRefreshMs = 30_000;
+const queueClockRefreshMs = 60_000;
+const longQueueWarningMinutes = 30;
 
 export function HistoryPage(): ReactElement {
   const [history, setHistory] = useState<HistoryListResult | undefined>();
   const [status, setStatus] = useState<StatusMessage>({ tone: "muted", text: "正在读取历史记录..." });
   const [isLoading, setIsLoading] = useState(true);
-  const [refreshingVideoId, setRefreshingVideoId] = useState<string | undefined>();
+  const [refreshingVideoIds, setRefreshingVideoIds] = useState<Set<string>>(() => new Set());
   const [selectedLesson, setSelectedLesson] = useState<LessonHistoryItem | undefined>();
   const [isCopyingLesson, setIsCopyingLesson] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
     let isMounted = true;
@@ -46,13 +52,35 @@ export function HistoryPage(): ReactElement {
     };
   }, []);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), queueClockRefreshMs);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const refreshableVideos = history?.videos.filter((video) => canAutoRefreshVideo(video.status)) ?? [];
+    if (refreshableVideos.length === 0) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      for (const video of refreshableVideos) {
+        if (!refreshingVideoIds.has(video.id)) {
+          void handleRefreshVideo(video.id, true);
+        }
+      }
+    }, videoAutoRefreshMs);
+
+    return () => window.clearTimeout(timer);
+  }, [history, refreshingVideoIds]);
+
   const isEmpty = history
     ? history.lessons.length === 0 && history.demos.length === 0 && history.videos.length === 0
     : false;
 
-  async function handleRefreshVideo(videoId: string): Promise<void> {
-    setRefreshingVideoId(videoId);
-    setStatus({ tone: "muted", text: "正在刷新视频状态..." });
+  async function handleRefreshVideo(videoId: string, automatic = false): Promise<void> {
+    setRefreshingVideoIds((current) => new Set(current).add(videoId));
+    setStatus({ tone: "muted", text: automatic ? "正在自动刷新视频状态..." : "正在刷新视频状态..." });
 
     try {
       const updatedVideo = await api.refreshVideo(videoId);
@@ -66,12 +94,16 @@ export function HistoryPage(): ReactElement {
       });
       setStatus({
         tone: updatedVideo.status === "Failed" ? "error" : "success",
-        text: getVideoRefreshStatus(updatedVideo.status)
+        text: getVideoRefreshStatus(updatedVideo)
       });
     } catch (error) {
       setStatus({ tone: "error", text: getErrorMessage(error, "刷新视频状态失败。") });
     } finally {
-      setRefreshingVideoId(undefined);
+      setRefreshingVideoIds((current) => {
+        const next = new Set(current);
+        next.delete(videoId);
+        return next;
+      });
     }
   }
 
@@ -153,16 +185,25 @@ export function HistoryPage(): ReactElement {
                   <strong>视频任务 {video.id}</strong>
                   <span>状态：{video.status}</span>
                   <span>请求：{video.requestId}</span>
-                  {video.videoUrl ? (
-                    <VideoPreview url={video.videoUrl} label={`视频任务 ${video.id} 预览`} />
+                  {canAutoRefreshVideo(video.status) ? (
+                    <>
+                      <span>{formatQueueDuration(video.createdAt, nowMs)}</span>
+                      {isLongQueued(video.createdAt, nowMs) ? (
+                        <span className="inline-warning">排队超过 30 分钟，可能服务商拥堵，建议重试或换模型。</span>
+                      ) : null}
+                    </>
                   ) : null}
+                  {video.videoUrl ? (
+                    <VideoPreview video={video} label={`视频任务 ${video.id} 预览`} />
+                  ) : null}
+                  {video.localVideoPath ? <span>本地保存：{video.localVideoPath}</span> : null}
                   {video.reason ? <span>{video.reason}</span> : null}
                   {canRefreshVideo(video.status) ? (
                     <div className="record-actions">
                       <button
                         type="button"
                         className="secondary-button"
-                        disabled={refreshingVideoId === video.id}
+                        disabled={refreshingVideoIds.has(video.id)}
                         onClick={() => void handleRefreshVideo(video.id)}
                       >
                         刷新状态
@@ -220,14 +261,16 @@ function canRefreshVideo(status: string): boolean {
   return status === "InQueue" || status === "InProgress" || status === "Succeed";
 }
 
-function getVideoRefreshStatus(status: string): string {
-  if (status === "Succeed") return "视频已生成。";
-  if (status === "Failed") return "视频生成失败。";
+function getVideoRefreshStatus(video: VideoHistoryItem): string {
+  if (video.status === "Succeed") return video.localVideoPath ? "视频已生成并保存到本地。" : "视频已生成。";
+  if (video.status === "Failed") return "视频生成失败。";
 
-  return `视频状态已刷新：${status}`;
+  return `视频状态已刷新：${video.status}`;
 }
 
-function VideoPreview({ url, label }: { url: string; label: string }): ReactElement {
+function VideoPreview({ video, label }: { video: VideoHistoryItem; label: string }): ReactElement {
+  const url = getVideoPlaybackUrl(video);
+
   return (
     <div className="video-preview-block">
       <video className="video-preview" controls preload="metadata" src={url} aria-label={label} />
@@ -236,4 +279,50 @@ function VideoPreview({ url, label }: { url: string; label: string }): ReactElem
       </div>
     </div>
   );
+}
+
+function canAutoRefreshVideo(status: string): boolean {
+  return status === "InQueue" || status === "InProgress";
+}
+
+function formatQueueDuration(createdAt: string, nowMs: number): string {
+  const minutes = getQueueMinutes(createdAt, nowMs);
+  if (minutes < 1) return "排队：不足 1 分钟";
+  if (minutes < 60) return `排队：${minutes} 分钟`;
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes === 0 ? `排队：${hours} 小时` : `排队：${hours} 小时 ${remainingMinutes} 分钟`;
+}
+
+function isLongQueued(createdAt: string, nowMs: number): boolean {
+  return getQueueMinutes(createdAt, nowMs) >= longQueueWarningMinutes;
+}
+
+function getQueueMinutes(createdAt: string, nowMs: number): number {
+  const createdMs = new Date(createdAt).getTime();
+  if (Number.isNaN(createdMs)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.floor((nowMs - createdMs) / 60_000));
+}
+
+function getVideoPlaybackUrl(video: VideoHistoryItem): string {
+  return video.localVideoPath ? toFileUrl(video.localVideoPath) : video.videoUrl ?? "";
+}
+
+function toFileUrl(filePath: string): string {
+  if (filePath.startsWith("file://")) {
+    return filePath;
+  }
+
+  const normalized = filePath.replace(/\\/g, "/");
+  const prefix = normalized.startsWith("/") ? "file://" : "file:///";
+  const encoded = normalized
+    .split("/")
+    .map((segment, index) => (index === 0 && /^[A-Za-z]:$/.test(segment) ? segment : encodeURIComponent(segment)))
+    .join("/");
+
+  return `${prefix}${encoded}`;
 }
