@@ -57,12 +57,15 @@ const textbook: TextbookRecord = {
 const textbookSearchResult: TextbookSearchResult = {
   id: "point-1",
   score: 0.91,
+  rerankScore: 0.97,
+  rankingSource: "reranker",
   textbookId: "book-1",
   title: "七年级数学",
   sourceName: "local.pdf",
   pageNumber: 2,
   kind: "page",
-  imagePath: "D:\\teacherHelper-data\\textbooks\\book-1\\pages\\page-002.png"
+  imagePath: "D:\\teacherHelper-data\\textbooks\\book-1\\pages\\page-002.png",
+  imageDataUrl: "data:image/png;base64,AAA"
 };
 
 describe("workflow pages", () => {
@@ -241,7 +244,33 @@ describe("workflow pages", () => {
     await waitFor(() => {
       expect(window.teacherHelper.searchTextbooks).toHaveBeenCalledWith({ query: "一次函数图像", limit: 6 });
     });
-    expect(await screen.findByText("第 2 页 · page · 相似度 0.91")).toBeTruthy();
+    expect(await screen.findByText("第 2 页 · page · 相似度 0.91 · 重排 0.97")).toBeTruthy();
+    expect(screen.getByRole("img", { name: /教材结果预览：七年级数学/ })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "查看图片" }));
+
+    expect(await screen.findByRole("heading", { name: "结果图片预览" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: /放大预览：七年级数学/ })).toBeTruthy();
+    expect(screen.getAllByText("D:\\teacherHelper-data\\textbooks\\book-1\\pages\\page-002.png").length).toBeGreaterThan(0);
+  });
+
+  test("TextbookPage shows a readable fallback when a search result image is unavailable", async () => {
+    window.teacherHelper.searchTextbooks = vi.fn().mockResolvedValue([{
+      ...textbookSearchResult,
+      id: "point-without-image",
+      imageDataUrl: undefined,
+      rankingSource: "qdrant",
+      rerankScore: undefined
+    }]);
+    const { TextbookPage } = await import("../../src/renderer/pages/TextbookPage");
+
+    render(<TextbookPage />);
+
+    expect(await screen.findByText("七年级数学")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("教材检索问题"), { target: { value: "一次函数图像" } });
+    fireEvent.click(screen.getByRole("button", { name: "检索教材" }));
+
+    expect(await screen.findByText("图片预览不可用")).toBeTruthy();
   });
 
   test("TextbookPage indexes multiple PDFs as one textbook library", async () => {

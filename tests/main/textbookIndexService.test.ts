@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -9,6 +9,7 @@ const settings: AppSettings = {
   textModel: { apiKey: "text-key", modelName: "text-model" },
   videoModel: { apiKey: "video-key", modelName: "video-model" },
   embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+  rerankerModel: { apiKey: "rerank-key", modelName: "Qwen/Qwen3-VL-Reranker-8B" },
   qdrant: { mode: "local", url: "http://127.0.0.1:6333", apiKey: "", collectionPrefix: "teacherhelper" }
 };
 
@@ -237,6 +238,9 @@ describe("textbookIndexService", () => {
   });
 
   it("searches textbook vectors from a Chinese question", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "teacherhelper-search-"));
+    const imagePath = join(tempDir, "page-003.png");
+    await writeFile(imagePath, Buffer.from("result-image"));
     const embeddingClient = {
       createEmbedding: vi.fn().mockResolvedValue([0.7, 0.8])
     };
@@ -250,7 +254,7 @@ describe("textbookIndexService", () => {
           sourceName: "local.pdf",
           pageNumber: 3,
           kind: "page",
-          imagePath: "D:\\teacherHelper-data\\textbooks\\book-1\\pages\\page-003.png"
+          imagePath
         }
       }])
     };
@@ -264,12 +268,129 @@ describe("textbookIndexService", () => {
     })).resolves.toEqual([{
       id: "point-1",
       score: 0.91,
+      rankingSource: "qdrant",
       textbookId: "book-1",
       title: "七年级数学",
       sourceName: "local.pdf",
       pageNumber: 3,
       kind: "page",
-      imagePath: "D:\\teacherHelper-data\\textbooks\\book-1\\pages\\page-003.png"
+      imagePath,
+      imageDataUrl: `data:image/png;base64,${Buffer.from("result-image").toString("base64")}`
     }]);
+    expect(qdrantClient.searchPoints).toHaveBeenCalledWith(expect.objectContaining({
+      limit: 12
+    }));
+  });
+
+  it("reranks expanded textbook candidates with the configured reranker model", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "teacherhelper-search-"));
+    const firstImagePath = join(tempDir, "page-001.png");
+    const secondImagePath = join(tempDir, "page-002.png");
+    await writeFile(firstImagePath, Buffer.from("first-image"));
+    await writeFile(secondImagePath, Buffer.from("second-image"));
+    const embeddingClient = {
+      createEmbedding: vi.fn().mockResolvedValue([0.7, 0.8]),
+      rerank: vi.fn().mockResolvedValue([
+        { index: 1, relevanceScore: 0.97 },
+        { index: 0, relevanceScore: 0.54 }
+      ])
+    };
+    const qdrantClient = {
+      searchPoints: vi.fn().mockResolvedValue([
+        {
+          id: "point-1",
+          score: 0.62,
+          payload: {
+            textbookId: "book-1",
+            title: "七年级数学",
+            sourceName: "local.pdf",
+            pageNumber: 1,
+            kind: "page",
+            imagePath: firstImagePath
+          }
+        },
+        {
+          id: "point-2",
+          score: 0.61,
+          payload: {
+            textbookId: "book-1",
+            title: "七年级数学",
+            sourceName: "local.pdf",
+            pageNumber: 2,
+            kind: "page",
+            imagePath: secondImagePath
+          }
+        }
+      ])
+    };
+
+    const results = await searchTextbookIndex({
+      query: "一次函数图像怎么讲？",
+      settings,
+      embeddingClient,
+      qdrantClient,
+      limit: 2
+    });
+
+    expect(embeddingClient.rerank).toHaveBeenCalledWith({
+      apiKey: "rerank-key",
+      modelName: "Qwen/Qwen3-VL-Reranker-8B",
+      query: "一次函数图像怎么讲？",
+      topN: 2,
+      instruction: expect.stringContaining("教材"),
+      documents: [
+        [
+          { text: expect.stringContaining("第 1 页") },
+          { image: `data:image/png;base64,${Buffer.from("first-image").toString("base64")}` }
+        ],
+        [
+          { text: expect.stringContaining("第 2 页") },
+          { image: `data:image/png;base64,${Buffer.from("second-image").toString("base64")}` }
+        ]
+      ]
+    });
+    expect(results.map((item) => item.id)).toEqual(["point-2", "point-1"]);
+    expect(results[0]).toMatchObject({
+      rerankScore: 0.97,
+      rankingSource: "reranker",
+      imageDataUrl: `data:image/png;base64,${Buffer.from("second-image").toString("base64")}`
+    });
+  });
+
+  it("falls back to qdrant order when reranking fails", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "teacherhelper-search-"));
+    const imagePath = join(tempDir, "page-001.png");
+    await writeFile(imagePath, Buffer.from("first-image"));
+    const embeddingClient = {
+      createEmbedding: vi.fn().mockResolvedValue([0.7, 0.8]),
+      rerank: vi.fn().mockRejectedValue(new Error("rerank unavailable"))
+    };
+    const qdrantClient = {
+      searchPoints: vi.fn().mockResolvedValue([{
+        id: "point-1",
+        score: 0.62,
+        payload: {
+          textbookId: "book-1",
+          title: "七年级数学",
+          sourceName: "local.pdf",
+          pageNumber: 1,
+          kind: "page",
+          imagePath
+        }
+      }])
+    };
+
+    await expect(searchTextbookIndex({
+      query: "一次函数",
+      settings,
+      embeddingClient,
+      qdrantClient,
+      limit: 1
+    })).resolves.toEqual([expect.objectContaining({
+      id: "point-1",
+      rankingSource: "qdrant",
+      rankingMessage: "重排序失败，已使用向量排序结果。",
+      imageDataUrl: `data:image/png;base64,${Buffer.from("first-image").toString("base64")}`
+    })]);
   });
 });

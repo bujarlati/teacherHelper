@@ -3,7 +3,8 @@ import type { ReactElement } from "react";
 import {
   defaultEmbeddingModelName,
   defaultQdrantCollectionPrefix,
-  defaultQdrantUrl
+  defaultQdrantUrl,
+  defaultRerankerModelName
 } from "../../shared/schemas";
 import type { AppSettings, LocalQdrantStatus } from "../../shared/types";
 import { api } from "../api";
@@ -21,6 +22,10 @@ function createEmptySettings(): AppSettings {
     embeddingModel: {
       apiKey: "",
       modelName: defaultEmbeddingModelName
+    },
+    rerankerModel: {
+      apiKey: "",
+      modelName: defaultRerankerModelName
     },
     qdrant: {
       mode: "local",
@@ -224,6 +229,35 @@ export function SettingsPage(): ReactElement {
               onChange={(event) => setSettings({
                 ...settings,
                 embeddingModel: { ...settings.embeddingModel, modelName: event.target.value }
+              })}
+            />
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>重排序模型</legend>
+          <label>
+            <span>重排序 API Key</span>
+            <input
+              type="password"
+              autoComplete="off"
+              disabled={controlsDisabled}
+              value={settings.rerankerModel.apiKey}
+              onChange={(event) => setSettings({
+                ...settings,
+                rerankerModel: { ...settings.rerankerModel, apiKey: event.target.value }
+              })}
+            />
+          </label>
+          <label>
+            <span>重排序模型名</span>
+            <input
+              autoComplete="off"
+              disabled={controlsDisabled}
+              value={settings.rerankerModel.modelName}
+              onChange={(event) => setSettings({
+                ...settings,
+                rerankerModel: { ...settings.rerankerModel, modelName: event.target.value }
               })}
             />
           </label>

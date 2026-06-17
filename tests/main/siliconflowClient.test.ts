@@ -206,6 +206,69 @@ describe("createSiliconFlowClient", () => {
     ).rejects.toThrow("SiliconFlow returned invalid embedding response");
   });
 
+  it("creates rerank requests with multimodal documents", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        results: [
+          { index: 1, relevance_score: 0.93 },
+          { index: 0, relevance_score: 0.81 }
+        ]
+      })
+    );
+    const client = createSiliconFlowClient({
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      baseUrl: "https://example.test/v1"
+    });
+    const documents = [
+      [{ text: "七年级数学 第 1 页" }, { image: "data:image/png;base64,AAA" }],
+      [{ text: "七年级数学 第 2 页" }, { image: "data:image/png;base64,BBB" }]
+    ];
+
+    await expect(client.rerank({
+      apiKey: "key",
+      modelName: "Qwen/Qwen3-VL-Reranker-8B",
+      query: "一次函数图像怎么讲？",
+      documents,
+      topN: 2,
+      instruction: "请根据老师的问题，将最相关的教材页面排在前面。"
+    })).resolves.toEqual([
+      { index: 1, relevanceScore: 0.93 },
+      { index: 0, relevanceScore: 0.81 }
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://example.test/v1/rerank",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "Content-Type": "application/json",
+          Authorization: "Bearer key"
+        }),
+        body: JSON.stringify({
+          model: "Qwen/Qwen3-VL-Reranker-8B",
+          query: "一次函数图像怎么讲？",
+          documents,
+          instruction: "请根据老师的问题，将最相关的教材页面排在前面。",
+          top_n: 2,
+          return_documents: false
+        })
+      })
+    );
+  });
+
+  it("rejects invalid rerank responses", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ results: [{ index: 0 }] }));
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(client.rerank({
+      apiKey: "key",
+      modelName: "Qwen/Qwen3-VL-Reranker-8B",
+      query: "一次函数",
+      documents: ["page"],
+      topN: 1
+    })).rejects.toThrow("SiliconFlow returned invalid rerank response");
+  });
+
   it("retries transient network resets before returning an embedding", async () => {
     const fetchMock = vi.fn()
       .mockRejectedValueOnce(fetchResetError())

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   appSettingsSchema,
+  defaultRerankerModelName,
   lessonPlanSchema,
   modelConfigSchema,
   problemDemoPlanSchema,
@@ -145,6 +146,7 @@ describe("appSettingsSchema", () => {
 
     expect(parsed.videoModel.apiKey).toBe("video-key");
     expect(parsed.embeddingModel.modelName).toBe("Qwen/Qwen3-VL-Embedding-8B");
+    expect(parsed.rerankerModel.modelName).toBe(defaultRerankerModelName);
     expect(parsed.qdrant.mode).toBe("remote");
     expect(parsed.qdrant.url).toBe("https://cluster.example.qdrant.io");
     expect(parsed.qdrant.collectionPrefix).toBe("teacherhelper");
@@ -159,6 +161,10 @@ describe("appSettingsSchema", () => {
     expect(parsed.embeddingModel).toEqual({
       apiKey: "",
       modelName: "Qwen/Qwen3-VL-Embedding-8B"
+    });
+    expect(parsed.rerankerModel).toEqual({
+      apiKey: "",
+      modelName: defaultRerankerModelName
     });
     expect(parsed.qdrant).toEqual({
       mode: "local",
@@ -181,6 +187,20 @@ describe("appSettingsSchema", () => {
       url: "http://localhost:6333",
       apiKey: "",
       collectionPrefix: "teacherhelper"
+    });
+  });
+
+  it("keeps explicit reranker settings when present", () => {
+    const parsed = appSettingsSchema.parse({
+      textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
+      videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
+      embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      rerankerModel: { apiKey: "rerank-key", modelName: "Qwen/Qwen3-VL-Reranker-8B" }
+    });
+
+    expect(parsed.rerankerModel).toEqual({
+      apiKey: "rerank-key",
+      modelName: "Qwen/Qwen3-VL-Reranker-8B"
     });
   });
 });

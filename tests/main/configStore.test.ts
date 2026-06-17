@@ -23,6 +23,7 @@ describe("createConfigStore", () => {
       textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
       videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
       embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      rerankerModel: { apiKey: "rerank-key", modelName: "Qwen/Qwen3-VL-Reranker-8B" },
       qdrant: {
         mode: "remote",
         url: "https://cluster.example.qdrant.io",
@@ -35,6 +36,7 @@ describe("createConfigStore", () => {
       textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
       videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
       embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      rerankerModel: { apiKey: "rerank-key", modelName: "Qwen/Qwen3-VL-Reranker-8B" },
       qdrant: {
         mode: "remote",
         url: "https://cluster.example.qdrant.io",
@@ -52,6 +54,7 @@ describe("createConfigStore", () => {
       textModel: { apiKey: "", modelName: "" },
       videoModel: { apiKey: "", modelName: "" },
       embeddingModel: { apiKey: "", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      rerankerModel: { apiKey: "", modelName: "Qwen/Qwen3-VL-Reranker-8B" },
       qdrant: { mode: "local", url: "http://127.0.0.1:6333", apiKey: "", collectionPrefix: "teacherhelper" }
     });
   });
@@ -72,6 +75,7 @@ describe("createConfigStore", () => {
       textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
       videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
       embeddingModel: { apiKey: "", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      rerankerModel: { apiKey: "", modelName: "Qwen/Qwen3-VL-Reranker-8B" },
       qdrant: { mode: "local", url: "http://127.0.0.1:6333", apiKey: "", collectionPrefix: "teacherhelper" }
     });
   });
@@ -115,6 +119,7 @@ describe("createConfigStore", () => {
       textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
       videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
       embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      rerankerModel: { apiKey: "rerank-key", modelName: "Qwen/Qwen3-VL-Reranker-8B" },
       qdrant: {
         mode: "remote",
         url: "https://cluster.example.qdrant.io",
@@ -128,6 +133,7 @@ describe("createConfigStore", () => {
       textModel: { apiKey: "", modelName: "" },
       videoModel: { apiKey: "", modelName: "" },
       embeddingModel: { apiKey: "", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      rerankerModel: { apiKey: "", modelName: "Qwen/Qwen3-VL-Reranker-8B" },
       qdrant: { mode: "local", url: "http://127.0.0.1:6333", apiKey: "", collectionPrefix: "teacherhelper" }
     });
   });
@@ -143,6 +149,7 @@ describe("createConfigStore", () => {
       textModel: { apiKey: "", modelName: "" },
       videoModel: { apiKey: "", modelName: "" },
       embeddingModel: { apiKey: "", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      rerankerModel: { apiKey: "", modelName: "Qwen/Qwen3-VL-Reranker-8B" },
       qdrant: { mode: "local", url: "http://127.0.0.1:6333", apiKey: "", collectionPrefix: "teacherhelper" }
     });
   });

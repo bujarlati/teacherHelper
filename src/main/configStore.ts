@@ -4,7 +4,8 @@ import {
   appSettingsSchema,
   defaultEmbeddingModelName,
   defaultQdrantCollectionPrefix,
-  defaultQdrantUrl
+  defaultQdrantUrl,
+  defaultRerankerModelName
 } from "../shared/schemas.js";
 import type { AppSettings } from "../shared/types.js";
 
@@ -13,6 +14,7 @@ function createEmptySettings(): AppSettings {
     textModel: { apiKey: "", modelName: "" },
     videoModel: { apiKey: "", modelName: "" },
     embeddingModel: { apiKey: "", modelName: defaultEmbeddingModelName },
+    rerankerModel: { apiKey: "", modelName: defaultRerankerModelName },
     qdrant: {
       mode: "local",
       url: defaultQdrantUrl,

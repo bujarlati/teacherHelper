@@ -25,6 +25,7 @@ export type AppSettings = {
   textModel: ModelConfig;
   videoModel: ModelConfig;
   embeddingModel: ModelConfig;
+  rerankerModel: ModelConfig;
   qdrant: QdrantConfig;
 };
 
@@ -146,6 +147,9 @@ export type TextbookRecord = {
 export type TextbookSearchResult = {
   id: string;
   score: number;
+  rerankScore?: number;
+  rankingSource: "qdrant" | "reranker";
+  rankingMessage?: string;
   textbookId: string;
   title: string;
   sourceName: string;
@@ -153,5 +157,6 @@ export type TextbookSearchResult = {
   sourcePageNumber?: number;
   kind: TextbookImageKind;
   imagePath: string;
+  imageDataUrl?: string;
   cropRect?: TextbookCropRect;
 };

@@ -33,6 +33,11 @@ export type EmbeddingContent =
   | { image: string }
   | Array<string | { text: string } | { image: string }>;
 
+export type RerankDocument =
+  | string
+  | { text?: string; image?: string; video?: string }
+  | Array<{ text?: string; image?: string; video?: string }>;
+
 type ChatCompletionInput = {
   apiKey: string;
   modelName: string;
@@ -48,6 +53,15 @@ type EmbeddingInput = {
   modelName: string;
   input: EmbeddingContent;
   dimensions?: number;
+};
+
+type RerankInput = {
+  apiKey: string;
+  modelName: string;
+  query: string;
+  documents: RerankDocument[];
+  topN: number;
+  instruction?: string;
 };
 
 type VideoStatusResult = {
@@ -168,6 +182,36 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
       }
 
       return embedding;
+    },
+
+    async rerank(input: RerankInput): Promise<Array<{ index: number; relevanceScore: number }>> {
+      const body: Record<string, JsonValue | undefined> = {
+        model: input.modelName,
+        query: input.query,
+        documents: input.documents as JsonValue[],
+        instruction: input.instruction,
+        top_n: input.topN,
+        return_documents: false
+      };
+
+      const data = await requestJson("/rerank", input.apiKey, {
+        method: "POST",
+        body: JSON.stringify(body)
+      });
+
+      if (!isRecord(data) || !Array.isArray(data.results)) {
+        throw new Error("SiliconFlow returned invalid rerank response");
+      }
+
+      const results: Array<{ index: number; relevanceScore: number }> = [];
+      for (const item of data.results) {
+        if (!isRecord(item) || typeof item.index !== "number" || typeof item.relevance_score !== "number") {
+          throw new Error("SiliconFlow returned invalid rerank response");
+        }
+        results.push({ index: item.index, relevanceScore: item.relevance_score });
+      }
+
+      return results;
     },
 
     async listModels(input: { apiKey: string; type?: "text" | "video" }): Promise<Array<{ id: string }>> {

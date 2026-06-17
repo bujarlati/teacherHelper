@@ -15,6 +15,7 @@ export function TextbookPage(): ReactElement {
   const [searchResults, setSearchResults] = useState<TextbookSearchResult[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [selectedTextbookId, setSelectedTextbookId] = useState<string | undefined>();
+  const [selectedSearchResult, setSelectedSearchResult] = useState<TextbookSearchResult | undefined>();
   const [title, setTitle] = useState("");
   const [query, setQuery] = useState("");
   const [isBusy, setIsBusy] = useState(false);
@@ -105,6 +106,7 @@ export function TextbookPage(): ReactElement {
     try {
       const results = await api.searchTextbooks({ query: nextQuery, limit: 6 });
       setSearchResults(results);
+      setSelectedSearchResult(undefined);
       setStatus({ tone: "success", text: results.length > 0 ? "教材检索完成。" : "没有找到相关教材页。" });
     } catch (error) {
       setStatus({ tone: "error", text: getErrorMessage(error, "教材检索失败。") });
@@ -214,15 +216,67 @@ export function TextbookPage(): ReactElement {
             <ul className="record-list">
               {searchResults.map((item) => (
                 <li key={item.id}>
+                  {item.imageDataUrl ? (
+                    <img
+                      className="result-thumbnail"
+                      src={item.imageDataUrl}
+                      alt={`教材结果预览：${item.title} ${formatSearchResultLocation(item)}`}
+                    />
+                  ) : (
+                    <div className="result-thumbnail result-thumbnail-empty">图片预览不可用</div>
+                  )}
                   <strong>{item.title}</strong>
-                  <span>{formatSearchResultLocation(item)} · {item.kind} · 相似度 {item.score.toFixed(2)}</span>
+                  <span>{formatSearchResultLocation(item)} · {item.kind} · {formatSearchScore(item)}</span>
+                  {item.rankingMessage ? <span>{item.rankingMessage}</span> : null}
                   <span>{item.imagePath}</span>
+                  <div className="record-actions">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => setSelectedSearchResult(item)}
+                    >
+                      查看图片
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
           )}
         </section>
       </div>
+
+      {selectedSearchResult ? (
+        <section className="result-section">
+          <h2>结果图片预览</h2>
+          {selectedSearchResult.imageDataUrl ? (
+            <img
+              className="result-preview-image"
+              src={selectedSearchResult.imageDataUrl}
+              alt={`放大预览：${selectedSearchResult.title} ${formatSearchResultLocation(selectedSearchResult)}`}
+            />
+          ) : (
+            <p className="empty-state">图片预览不可用。</p>
+          )}
+          <dl className="metadata-list">
+            <div>
+              <dt>教材</dt>
+              <dd>{selectedSearchResult.title}</dd>
+            </div>
+            <div>
+              <dt>位置</dt>
+              <dd>{formatSearchResultLocation(selectedSearchResult)} · {selectedSearchResult.kind}</dd>
+            </div>
+            <div>
+              <dt>得分</dt>
+              <dd>{formatSearchScore(selectedSearchResult)}</dd>
+            </div>
+            <div>
+              <dt>路径</dt>
+              <dd>{selectedSearchResult.imagePath}</dd>
+            </div>
+          </dl>
+        </section>
+      ) : null}
 
       <section className="result-section">
         <h2>教材库预览</h2>
@@ -296,6 +350,11 @@ function formatSourceSummary(record: TextbookRecord): string {
 function formatSearchResultLocation(item: TextbookSearchResult): string {
   const sourcePage = item.sourcePageNumber ? ` · ${item.sourceName} 第 ${item.sourcePageNumber} 页` : "";
   return `第 ${item.pageNumber} 页${sourcePage}`;
+}
+
+function formatSearchScore(item: TextbookSearchResult): string {
+  const rerankScore = typeof item.rerankScore === "number" ? ` · 重排 ${item.rerankScore.toFixed(2)}` : "";
+  return `相似度 ${item.score.toFixed(2)}${rerankScore}`;
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {

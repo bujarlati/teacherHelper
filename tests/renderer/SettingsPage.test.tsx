@@ -16,6 +16,10 @@ const storedSettings: AppSettings = {
     apiKey: "embedding-key",
     modelName: "Qwen/Qwen3-VL-Embedding-8B"
   },
+  rerankerModel: {
+    apiKey: "rerank-key",
+    modelName: "Qwen/Qwen3-VL-Reranker-8B"
+  },
   qdrant: {
     mode: "local",
     url: "http://127.0.0.1:6333",
@@ -62,11 +66,14 @@ describe("SettingsPage", () => {
     expect(screen.getByDisplayValue("Wan-AI/Wan2.2-T2V-A14B")).toBeTruthy();
     expect(screen.getByDisplayValue("embedding-key")).toBeTruthy();
     expect(screen.getByDisplayValue("Qwen/Qwen3-VL-Embedding-8B")).toBeTruthy();
+    expect(screen.getByDisplayValue("rerank-key")).toBeTruthy();
+    expect(screen.getByDisplayValue("Qwen/Qwen3-VL-Reranker-8B")).toBeTruthy();
     expect(screen.getByDisplayValue("http://127.0.0.1:6333")).toBeTruthy();
     expect(screen.getByText("本地向量库运行中")).toBeTruthy();
     expect(screen.getByLabelText("文本 API Key")).toHaveProperty("type", "password");
     expect(screen.getByLabelText("视频 API Key")).toHaveProperty("type", "password");
     expect(screen.getByLabelText("嵌入 API Key")).toHaveProperty("type", "password");
+    expect(screen.getByLabelText("重排序 API Key")).toHaveProperty("type", "password");
     expect(screen.getByLabelText("Qdrant API Key")).toHaveProperty("type", "password");
     expect(screen.getByLabelText("Qdrant API Key")).toHaveProperty("disabled", true);
 
@@ -75,6 +82,9 @@ describe("SettingsPage", () => {
     });
     fireEvent.change(screen.getByLabelText("视频模型名"), {
       target: { value: "updated-video-model" }
+    });
+    fireEvent.change(screen.getByLabelText("重排序模型名"), {
+      target: { value: "updated-reranker-model" }
     });
     fireEvent.change(screen.getByLabelText("集合前缀"), {
       target: { value: "teacherhelper-math" }
@@ -94,6 +104,10 @@ describe("SettingsPage", () => {
         embeddingModel: {
           apiKey: "embedding-key",
           modelName: "Qwen/Qwen3-VL-Embedding-8B"
+        },
+        rerankerModel: {
+          apiKey: "rerank-key",
+          modelName: "updated-reranker-model"
         },
         qdrant: {
           mode: "local",
@@ -116,6 +130,8 @@ describe("SettingsPage", () => {
     expect(screen.getByLabelText("视频模型名")).toHaveProperty("value", "");
     expect(screen.getByLabelText("嵌入 API Key")).toHaveProperty("value", "");
     expect(screen.getByLabelText("嵌入模型名")).toHaveProperty("value", "Qwen/Qwen3-VL-Embedding-8B");
+    expect(screen.getByLabelText("重排序 API Key")).toHaveProperty("value", "");
+    expect(screen.getByLabelText("重排序模型名")).toHaveProperty("value", "Qwen/Qwen3-VL-Reranker-8B");
     expect(screen.getByLabelText("Qdrant 模式")).toHaveProperty("value", "local");
     expect(screen.getByLabelText("Qdrant 地址")).toHaveProperty("value", "http://127.0.0.1:6333");
     expect(screen.getByLabelText("Qdrant API Key")).toHaveProperty("value", "");

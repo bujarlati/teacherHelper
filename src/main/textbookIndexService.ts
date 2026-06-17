@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   AppSettings,
@@ -13,6 +13,14 @@ import type { EmbeddingContent } from "./siliconflowClient.js";
 
 type EmbeddingClientLike = {
   createEmbedding(input: { apiKey: string; modelName: string; input: EmbeddingContent }): Promise<number[]>;
+  rerank?(input: {
+    apiKey: string;
+    modelName: string;
+    query: string;
+    documents: Array<Array<{ text?: string; image?: string }>>;
+    topN: number;
+    instruction?: string;
+  }): Promise<Array<{ index: number; relevanceScore: number }>>;
 };
 
 type QdrantClientLike = {
@@ -178,24 +186,45 @@ export async function searchTextbookIndex(input: {
     apiKey: input.settings.qdrant.apiKey,
     collectionName: createTextbookCollectionName(input.settings.qdrant.collectionPrefix),
     vector,
-    limit: input.limit
+    limit: createCandidateLimit(input.limit)
   });
 
-  return results.map((result) => {
-    const payload = result.payload;
-    return {
-      id: result.id,
-      score: result.score,
-      textbookId: readString(payload.textbookId, "textbookId"),
-      title: readString(payload.title, "title"),
-      sourceName: readString(payload.sourceName, "sourceName"),
-      pageNumber: readNumber(payload.pageNumber, "pageNumber"),
-      ...(typeof payload.sourcePageNumber === "number" ? { sourcePageNumber: payload.sourcePageNumber } : {}),
-      kind: readKind(payload.kind),
-      imagePath: readString(payload.imagePath, "imagePath"),
-      ...(isCropRect(payload.cropRect) ? { cropRect: payload.cropRect } : {})
-    };
-  });
+  const mappedResults = await Promise.all(results.map((result) => mapSearchResult(result)));
+  const visibleResults = mappedResults.slice(0, input.limit);
+  const rerankerApiKey = input.settings.rerankerModel.apiKey.trim() || input.settings.embeddingModel.apiKey.trim();
+  const rerankerModelName = input.settings.rerankerModel.modelName.trim();
+
+  if (!input.embeddingClient.rerank || !rerankerApiKey || !rerankerModelName || mappedResults.length === 0) {
+    return visibleResults;
+  }
+
+  try {
+    const reranked = await input.embeddingClient.rerank({
+      apiKey: rerankerApiKey,
+      modelName: rerankerModelName,
+      query: input.query,
+      documents: mappedResults.map(createRerankDocument),
+      topN: input.limit,
+      instruction: "请根据老师的中文问题，将最相关的教材整页或局部图形排在前面。"
+    });
+    const rerankedResults: TextbookSearchResult[] = [];
+    for (const item of reranked) {
+      const result = mappedResults[item.index];
+      if (result) {
+        rerankedResults.push({ ...result, rerankScore: item.relevanceScore, rankingSource: "reranker" });
+      }
+      if (rerankedResults.length >= input.limit) {
+        break;
+      }
+    }
+
+    return rerankedResults.length > 0 ? rerankedResults : visibleResults;
+  } catch {
+    return visibleResults.map((result) => ({
+      ...result,
+      rankingMessage: "重排序失败，已使用向量排序结果。"
+    }));
+  }
 }
 
 export function createTextbookCollectionName(prefix: string): string {
@@ -328,6 +357,47 @@ function readKind(value: unknown): TextbookImageKind {
   }
 
   return value;
+}
+
+function createCandidateLimit(limit: number): number {
+  return Math.min(24, Math.max(limit, limit * 3));
+}
+
+async function mapSearchResult(result: { id: string; score: number; payload: Record<string, unknown> }): Promise<TextbookSearchResult> {
+  const payload = result.payload;
+  const imagePath = readString(payload.imagePath, "imagePath");
+
+  return {
+    id: result.id,
+    score: result.score,
+    rankingSource: "qdrant",
+    textbookId: readString(payload.textbookId, "textbookId"),
+    title: readString(payload.title, "title"),
+    sourceName: readString(payload.sourceName, "sourceName"),
+    pageNumber: readNumber(payload.pageNumber, "pageNumber"),
+    ...(typeof payload.sourcePageNumber === "number" ? { sourcePageNumber: payload.sourcePageNumber } : {}),
+    kind: readKind(payload.kind),
+    imagePath,
+    ...(await readImageDataUrl(imagePath)),
+    ...(isCropRect(payload.cropRect) ? { cropRect: payload.cropRect } : {})
+  };
+}
+
+async function readImageDataUrl(imagePath: string): Promise<{ imageDataUrl?: string }> {
+  try {
+    const bytes = await readFile(imagePath);
+    return { imageDataUrl: `data:image/png;base64,${bytes.toString("base64")}` };
+  } catch {
+    return {};
+  }
+}
+
+function createRerankDocument(result: TextbookSearchResult): Array<{ text?: string; image?: string }> {
+  const sourcePage = result.sourcePageNumber ? `，源 PDF 第 ${result.sourcePageNumber} 页` : "";
+  const text = `${result.title}，${result.sourceName}，第 ${result.pageNumber} 页${sourcePage}，类型 ${result.kind}`;
+  return result.imageDataUrl
+    ? [{ text }, { image: result.imageDataUrl }]
+    : [{ text }];
 }
 
 function isCropRect(value: unknown): value is TextbookCropRect {

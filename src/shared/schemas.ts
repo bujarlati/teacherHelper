@@ -6,6 +6,7 @@ export const modelConfigSchema = z.object({
 });
 
 export const defaultEmbeddingModelName = "Qwen/Qwen3-VL-Embedding-8B";
+export const defaultRerankerModelName = "Qwen/Qwen3-VL-Reranker-8B";
 export const defaultQdrantUrl = "http://127.0.0.1:6333";
 export const defaultQdrantCollectionPrefix = "teacherhelper";
 
@@ -22,6 +23,10 @@ export const appSettingsSchema = z.object({
   embeddingModel: modelConfigSchema.default({
     apiKey: "",
     modelName: defaultEmbeddingModelName
+  }),
+  rerankerModel: modelConfigSchema.default({
+    apiKey: "",
+    modelName: defaultRerankerModelName
   }),
   qdrant: qdrantConfigSchema.default({
     mode: "local",

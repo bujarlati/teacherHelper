@@ -104,6 +104,7 @@ const completeSettings: AppSettings = {
   textModel: { apiKey: "text-key", modelName: "text-model" },
   videoModel: { apiKey: "video-key", modelName: "video-model" },
   embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+  rerankerModel: { apiKey: "rerank-key", modelName: "Qwen/Qwen3-VL-Reranker-8B" },
   qdrant: { mode: "local", url: "http://127.0.0.1:6333", apiKey: "", collectionPrefix: "teacherhelper" }
 };
 
@@ -779,6 +780,7 @@ describe("registerWorkflowIpcHandlers", () => {
     const searchResults: TextbookSearchResult[] = [{
       id: "point-1",
       score: 0.9,
+      rankingSource: "qdrant",
       textbookId: "book-1",
       title: "七年级数学",
       sourceName: "local.pdf",
