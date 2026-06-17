@@ -105,6 +105,23 @@ describe("createVideoTaskFromLesson", () => {
     expect(client.submitVideo).not.toHaveBeenCalled();
   });
 
+  it("uses the matching text-to-video model for lesson videos when settings contain an image-to-video model", async () => {
+    const client: SubmitClient = {
+      submitVideo: vi.fn().mockResolvedValue("request-lesson-1")
+    };
+
+    await createVideoTaskFromLesson({
+      lessonId: "lesson-1",
+      lesson: createLesson(),
+      config: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-I2V-A14B" },
+      client
+    });
+
+    expect(client.submitVideo).toHaveBeenCalledWith(expect.objectContaining({
+      modelName: "Wan-AI/Wan2.2-T2V-A14B"
+    }));
+  });
+
   it("does not modify the lesson object", async () => {
     const client: SubmitClient = {
       submitVideo: vi.fn().mockResolvedValue("request-lesson-1")

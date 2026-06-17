@@ -57,7 +57,10 @@ export async function createVideoTaskFromLesson({
 }: CreateVideoTaskFromLessonInput): Promise<VideoRecord> {
   const task = await submitVideoTask({
     client,
-    config,
+    config: {
+      ...config,
+      modelName: toTextToVideoModelName(config.modelName)
+    },
     prompt: buildVideoGenerationPrompt({
       prompt: lesson.video_prompt,
       script: lesson.video_script
@@ -69,6 +72,10 @@ export async function createVideoTaskFromLesson({
     ...task,
     lessonId
   };
+}
+
+function toTextToVideoModelName(modelName: string): string {
+  return modelName.replace(/I2V/gi, (match) => match[0] === "i" ? "t2v" : "T2V");
 }
 
 export async function createStandaloneVideoTask({

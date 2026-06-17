@@ -86,6 +86,22 @@ describe("submitVideoTask", () => {
     });
   });
 
+  it("rejects image-to-video models without an input image before calling the client", async () => {
+    const client: SubmitClient = {
+      submitVideo: vi.fn()
+    };
+
+    await expect(
+      submitVideoTask({
+        client,
+        config: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-I2V-A14B" },
+        prompt: "A math animation.",
+        script: "Show the math idea."
+      })
+    ).rejects.toThrow("图生视频模型需要参考图片，请上传图片或改用文生视频模型 Wan-AI/Wan2.2-T2V-A14B。");
+    expect(client.submitVideo).not.toHaveBeenCalled();
+  });
+
   it("throws a clear Chinese error before calling the client when video model config is missing", async () => {
     const client: SubmitClient = {
       submitVideo: vi.fn()

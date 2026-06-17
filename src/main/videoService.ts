@@ -54,6 +54,11 @@ export async function submitVideoTask(input: SubmitVideoTaskInput): Promise<Vide
   if (!input.config.apiKey.trim() || !input.config.modelName.trim()) {
     throw new Error(missingVideoConfigMessage);
   }
+  if (isImageToVideoModel(input.config.modelName) && !input.image?.trim()) {
+    throw new Error(
+      `图生视频模型需要参考图片，请上传图片或改用文生视频模型 ${toTextToVideoModelName(input.config.modelName)}。`
+    );
+  }
 
   const submitInput: Parameters<VideoSubmitClient["submitVideo"]>[0] = {
     apiKey: input.config.apiKey,
@@ -113,4 +118,12 @@ function delay(intervalMs: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, intervalMs);
   });
+}
+
+function isImageToVideoModel(modelName: string): boolean {
+  return /I2V/i.test(modelName);
+}
+
+function toTextToVideoModelName(modelName: string): string {
+  return modelName.replace(/I2V/gi, (match) => match[0] === "i" ? "t2v" : "T2V");
 }
