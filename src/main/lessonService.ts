@@ -15,7 +15,7 @@ const modelExampleQuestionSchema = z.preprocess(
   })
 );
 
-const modelLessonPlanSchema = lessonPlanSchema.extend({
+const modelLessonPlanContentSchema = lessonPlanSchema.extend({
   teaching_goals: modelStringListSchema,
   key_points: modelStringListSchema,
   difficult_points: modelStringListSchema,
@@ -40,6 +40,7 @@ const modelLessonPlanSchema = lessonPlanSchema.extend({
   homework_suggestions: modelStringListSchema,
   markdown: lessonPlanSchema.shape.markdown.optional()
 });
+const modelLessonPlanSchema = z.preprocess(normalizeLessonPlanObject, modelLessonPlanContentSchema);
 
 type LessonClient = {
   chatCompletion(input: {
@@ -182,6 +183,82 @@ function normalizeStringList(value: unknown): unknown {
   }
 
   return value;
+}
+
+function normalizeLessonPlanObject(value: unknown): unknown {
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  const normalized: Record<string, unknown> = { ...value };
+  if (normalized.board_design === undefined) {
+    normalized.board_design = readBoardDesignAlias(value) ?? createFallbackBoardDesign(value);
+  }
+
+  return normalized;
+}
+
+function readBoardDesignAlias(value: Record<string, unknown>): unknown {
+  return value["板书设计"] ?? value.blackboard_design ?? value.blackboardDesign ?? value.boardDesign;
+}
+
+function createFallbackBoardDesign(value: Record<string, unknown>): string[] {
+  const items: string[] = [];
+  const title = readString(value.title);
+  const keyPoints = readStringItems(value.key_points).slice(0, 2);
+  const difficultPoints = readStringItems(value.difficult_points).slice(0, 1);
+  const exampleQuestion = readFirstQuestion(value.worked_solutions) ?? readFirstQuestion(value.example_questions);
+
+  if (title) {
+    items.push(`课题：${title}`);
+  }
+  if (keyPoints.length > 0) {
+    items.push(`重点：${keyPoints.join("；")}`);
+  }
+  if (difficultPoints.length > 0) {
+    items.push(`难点：${difficultPoints.join("；")}`);
+  }
+  if (exampleQuestion) {
+    items.push(`例题：${exampleQuestion}`);
+  }
+
+  return items.length > 0
+    ? items
+    : ["课题：待完善", "重点：梳理核心概念", "例题：选择典型题目讲解", "小结：回顾方法与易错点"];
+}
+
+function readStringItems(value: unknown): string[] {
+  const normalized = normalizeStringList(value);
+  return Array.isArray(normalized) ? normalized.filter((item): item is string => typeof item === "string") : [];
+}
+
+function readFirstQuestion(value: unknown): string | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  for (const item of value) {
+    if (typeof item === "string") {
+      const text = cleanListItem(item);
+      if (text) return text;
+      continue;
+    }
+
+    if (isRecord(item)) {
+      const question = readString(item.question);
+      if (question) return question;
+    }
+  }
+
+  return undefined;
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function cleanListItem(value: string): string {

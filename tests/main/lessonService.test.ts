@@ -132,6 +132,50 @@ describe("generateLessonPlan", () => {
     });
   });
 
+  it("fills a useful board design when the model omits board_design", async () => {
+    const { markdown: _markdown, board_design: _boardDesign, ...modelLesson } = completeLessonPlan();
+    const fakeClient = {
+      chatCompletion: vi.fn(async () => JSON.stringify(modelLesson))
+    };
+
+    await expect(
+      generateLessonPlan({
+        topic: "一元一次方程",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({
+      board_design: [
+        "课题：一元一次方程",
+        "重点：方程的解；等式两边同时变形",
+        "难点：从实际情境中找等量关系",
+        "例题：2x + 3 = 11"
+      ],
+      markdown: expect.stringContaining("## 板书设计")
+    });
+  });
+
+  it("accepts Chinese board design keys from model output", async () => {
+    const { markdown: _markdown, board_design: _boardDesign, ...baseLesson } = completeLessonPlan();
+    const modelLesson = {
+      ...baseLesson,
+      板书设计: "设未知数\n列方程\n解方程\n检验"
+    };
+    const fakeClient = {
+      chatCompletion: vi.fn(async () => JSON.stringify(modelLesson))
+    };
+
+    await expect(
+      generateLessonPlan({
+        topic: "一元一次方程",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({
+      board_design: ["设未知数", "列方程", "解方程", "检验"]
+    });
+  });
+
   it("normalizes example questions that the model returns as strings", async () => {
     const { markdown: _markdown, ...baseLesson } = completeLessonPlan();
     const modelLesson = {
