@@ -102,6 +102,7 @@ describe("workflow pages", () => {
         generateDemo: vi.fn().mockResolvedValue({ id: "demo-1", plan: demoPlan, url: "http://127.0.0.1:4321/" }),
         openDemo: vi.fn().mockResolvedValue("http://127.0.0.1:4321/"),
         refreshVideo: vi.fn(),
+        deleteHistoryRecord: vi.fn(),
         listHistory: vi.fn()
       }
     });
@@ -622,6 +623,37 @@ describe("workflow pages", () => {
     expect(await screen.findByText("演示已打开：http://127.0.0.1:4321/")).toBeTruthy();
   });
 
+  test("HistoryPage opens the HTML courseware linked to a lesson record", async () => {
+    const lessons: LessonRecord[] = [{
+      id: "lesson-1",
+      title: "一次函数复习",
+      topic: "一次函数",
+      markdown: lesson.markdown,
+      createdAt: "2026-06-15T01:02:03.000Z"
+    }];
+    const demos: DemoRecord[] = [{
+      id: "lesson-1",
+      title: "一次函数复习",
+      problem: "课堂黑板，一次函数图像。",
+      kind: "simple",
+      demoPath: "D:\\local-demos\\lesson-1",
+      createdAt: "2026-06-15T01:02:03.000Z"
+    }];
+    window.teacherHelper.listHistory = vi.fn().mockResolvedValue({ lessons, demos, videos: [] });
+    window.teacherHelper.openDemo = vi.fn().mockResolvedValue("http://127.0.0.1:8123/");
+    const { HistoryPage } = await import("../../src/renderer/pages/HistoryPage");
+
+    render(<HistoryPage />);
+
+    expect((await screen.findAllByText("一次函数复习")).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "打开课件" }));
+
+    await waitFor(() => {
+      expect(window.teacherHelper.openDemo).toHaveBeenCalledWith("lesson-1");
+    });
+    expect(await screen.findByText("演示已打开：http://127.0.0.1:8123/")).toBeTruthy();
+  });
+
   test("HistoryPage opens a saved lesson and copies its markdown", async () => {
     const lessons: LessonRecord[] = [{
       id: "lesson-1",
@@ -647,6 +679,30 @@ describe("workflow pages", () => {
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith(lesson.markdown);
     });
     expect(await screen.findByText("历史教案 Markdown 已复制。")).toBeTruthy();
+  });
+
+  test("HistoryPage deletes a lesson record and refreshes the visible history", async () => {
+    const lessons: LessonRecord[] = [{
+      id: "lesson-1",
+      title: "一次函数复习",
+      topic: "一次函数",
+      markdown: lesson.markdown,
+      createdAt: "2026-06-15T01:02:03.000Z"
+    }];
+    window.teacherHelper.listHistory = vi.fn().mockResolvedValue({ lessons, demos: [], videos: [] });
+    window.teacherHelper.deleteHistoryRecord = vi.fn().mockResolvedValue({ lessons: [], demos: [], videos: [] });
+    const { HistoryPage } = await import("../../src/renderer/pages/HistoryPage");
+
+    render(<HistoryPage />);
+
+    expect(await screen.findByText("一次函数复习")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "删除教案 一次函数复习" }));
+
+    await waitFor(() => {
+      expect(window.teacherHelper.deleteHistoryRecord).toHaveBeenCalledWith({ kind: "lesson", id: "lesson-1" });
+    });
+    expect(screen.queryByText("一次函数复习")).toBeNull();
+    expect(await screen.findByText("历史记录已删除。")).toBeTruthy();
   });
 
   test("HistoryPage refreshes a queued video task and shows the returned video URL", async () => {

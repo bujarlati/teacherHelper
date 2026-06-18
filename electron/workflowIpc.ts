@@ -1,5 +1,5 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { lessonPlanSchema } from "../src/shared/schemas.js";
 import type {
@@ -35,6 +35,9 @@ type HistoryStoreLike = {
   listLessons(): Promise<LessonRecord[]>;
   listDemos(): Promise<DemoRecord[]>;
   listVideos(): Promise<VideoRecord[]>;
+  deleteLesson?(id: string): Promise<LessonRecord | undefined>;
+  deleteDemo?(id: string): Promise<DemoRecord | undefined>;
+  deleteVideo?(id: string): Promise<VideoRecord | undefined>;
 };
 
 type TextbookStoreLike = {
@@ -217,6 +220,10 @@ const textbookSearchInputSchema = z.object({
   query: nonEmptyStringSchema,
   limit: z.number().int().positive().max(20).default(6)
 });
+const historyDeleteInputSchema = z.object({
+  kind: z.enum(["lesson", "demo", "video"]),
+  id: nonEmptyStringSchema
+});
 
 export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: WorkflowDeps): void {
   let activeDemoServer: DemoServer | undefined;
@@ -228,14 +235,15 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
     const lesson = await deps.generateLessonPlan({ topic, config: settings.textModel, client: deps.client });
     const id = deps.createId();
     const createdAt = deps.now();
-
-    await deps.historyStore.addLesson({
+    const lessonRecord: LessonRecord = {
       id,
       title: lesson.title,
       topic,
       markdown: lesson.markdown,
       createdAt
-    });
+    };
+
+    await deps.historyStore.addLesson(lessonRecord);
 
     let imageAssets: LessonImageAsset[] = [];
     let imageError: string | undefined;
@@ -268,7 +276,13 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
         historyProblem: lesson.video_prompt
       });
       activeDemoServer = demoResult.activeDemoServer;
-      localDemo = demoResult.response;
+      const linkedLocalDemo = demoResult.response;
+      await deps.historyStore.addLesson({
+        ...lessonRecord,
+        demoId: linkedLocalDemo.id,
+        demoPath: join(deps.dataDir, "local-demos", id)
+      });
+      localDemo = linkedLocalDemo;
     } catch (error) {
       demoError = getErrorMessage(error);
     }
@@ -466,11 +480,14 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
     });
   });
 
-  ipcMainLike.handle("history:list", async () => ({
-    lessons: await deps.historyStore.listLessons(),
-    demos: await deps.historyStore.listDemos(),
-    videos: await deps.historyStore.listVideos()
-  }));
+  ipcMainLike.handle("history:list", async () => listHistory(deps.historyStore));
+
+  ipcMainLike.handle("history:delete", async (_event, input) => {
+    const parsed = historyDeleteInputSchema.parse(input);
+    await deleteHistoryRecord(parsed, deps);
+
+    return listHistory(deps.historyStore);
+  });
 }
 
 async function generateDemo(
@@ -622,6 +639,100 @@ async function updateLessonWordPath(historyStore: HistoryStoreLike, id: string, 
   }
 
   await historyStore.addLesson({ ...existingLesson, wordPath: filePath });
+}
+
+async function listHistory(historyStore: HistoryStoreLike): Promise<{
+  lessons: LessonRecord[];
+  demos: DemoRecord[];
+  videos: VideoRecord[];
+}> {
+  return {
+    lessons: await historyStore.listLessons(),
+    demos: await historyStore.listDemos(),
+    videos: await historyStore.listVideos()
+  };
+}
+
+async function deleteHistoryRecord(
+  input: z.infer<typeof historyDeleteInputSchema>,
+  deps: WorkflowDeps
+): Promise<void> {
+  requireDeleteHistoryStore(deps.historyStore);
+
+  if (input.kind === "lesson") {
+    const lessons = await deps.historyStore.listLessons();
+    const demos = await deps.historyStore.listDemos();
+    const lesson = lessons.find((item) => item.id === input.id);
+    if (!lesson) {
+      throw new Error("未找到历史教案。");
+    }
+
+    const linkedDemoIds = new Set([lesson.demoId, lesson.id].filter(Boolean));
+    const linkedDemos = demos.filter((demo) => linkedDemoIds.has(demo.id));
+    const pathsToRemove = new Set<string>();
+    addPath(pathsToRemove, lesson.demoPath);
+    addPath(pathsToRemove, lesson.wordPath);
+    for (const demo of linkedDemos) {
+      addPath(pathsToRemove, demo.demoPath);
+    }
+
+    await deps.historyStore.deleteLesson(input.id);
+    for (const demo of linkedDemos) {
+      await deps.historyStore.deleteDemo(demo.id);
+    }
+    await removeGeneratedPaths(pathsToRemove, deps.dataDir);
+    return;
+  }
+
+  if (input.kind === "demo") {
+    const demos = await deps.historyStore.listDemos();
+    const demo = demos.find((item) => item.id === input.id);
+    if (!demo) {
+      throw new Error("未找到演示记录。");
+    }
+
+    await deps.historyStore.deleteDemo(input.id);
+    await removeGeneratedPaths(new Set([demo.demoPath]), deps.dataDir);
+    return;
+  }
+
+  const videos = await deps.historyStore.listVideos();
+  const video = videos.find((item) => item.id === input.id);
+  if (!video) {
+    throw new Error("未找到视频任务。");
+  }
+
+  await deps.historyStore.deleteVideo(input.id);
+  await removeGeneratedPaths(new Set(video.localVideoPath ? [video.localVideoPath] : []), deps.dataDir);
+}
+
+function requireDeleteHistoryStore(historyStore: HistoryStoreLike): asserts historyStore is HistoryStoreLike & {
+  deleteLesson(id: string): Promise<LessonRecord | undefined>;
+  deleteDemo(id: string): Promise<DemoRecord | undefined>;
+  deleteVideo(id: string): Promise<VideoRecord | undefined>;
+} {
+  if (!historyStore.deleteLesson || !historyStore.deleteDemo || !historyStore.deleteVideo) {
+    throw new Error("历史删除服务未初始化。");
+  }
+}
+
+function addPath(paths: Set<string>, value: string | undefined): void {
+  if (value) {
+    paths.add(value);
+  }
+}
+
+async function removeGeneratedPaths(paths: Set<string>, dataDir: string): Promise<void> {
+  for (const path of paths) {
+    if (isInsideDirectory(dataDir, path)) {
+      await rm(path, { recursive: true, force: true });
+    }
+  }
+}
+
+function isInsideDirectory(baseDir: string, targetPath: string): boolean {
+  const relativePath = relative(resolve(baseDir), resolve(targetPath));
+  return relativePath !== "" && !relativePath.startsWith("..") && !relativePath.includes(":");
 }
 
 function safeFileName(value: string): string {

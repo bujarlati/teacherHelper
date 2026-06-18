@@ -42,6 +42,15 @@ describe("lessonImageService", () => {
     expect(prompts.map((item) => item.prompt).join("\n")).toContain("适合中小学生");
   });
 
+  it("forbids text, formulas, labels, and numbers in generated image prompts", () => {
+    const promptText = createLessonImagePrompts(lesson).map((item) => item.prompt).join("\n");
+
+    expect(promptText).toContain("不要出现任何文字");
+    expect(promptText).toContain("不要出现数字、公式、符号、标签");
+    expect(promptText).not.toContain("少量中文板书");
+    expect(promptText).not.toContain("简单标注");
+  });
+
   it("skips image generation when image settings are incomplete", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "teacherhelper-lesson-images-"));
     const client = { createImage: vi.fn() };
@@ -86,7 +95,8 @@ describe("lessonImageService", () => {
     expect(client.createImage).toHaveBeenNthCalledWith(1, expect.objectContaining({
       apiKey: "image-key",
       modelName: "Tongyi-MAI/Z-Image",
-      imageSize: "1024x1024"
+      imageSize: "1024x1024",
+      negativePrompt: expect.stringContaining("text")
     }));
     expect(fetchMock).toHaveBeenCalledWith("https://cdn.example.test/story.png");
     await expect(readFile(join(tempDir, "lesson-images", "lesson-1-01.png"))).resolves.toEqual(Buffer.from([1, 2, 3]));

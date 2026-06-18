@@ -27,12 +27,31 @@ type GenerateLessonImagesInput = {
 };
 
 const defaultImageSize = "1024x1024";
-const imageNegativePrompt = "low quality, blurry, watermark, dense text, copyrighted character, scary scene";
+const imageNegativePrompt = [
+  "text",
+  "words",
+  "letters",
+  "numbers",
+  "formula",
+  "equation",
+  "label",
+  "caption",
+  "handwriting",
+  "Chinese characters",
+  "English letters",
+  "watermark",
+  "logo",
+  "low quality",
+  "blurry",
+  "copyrighted character",
+  "scary scene"
+].join(", ");
 
 export function createLessonImagePrompts(lesson: LessonPlan): LessonImagePrompt[] {
   const title = compactText(lesson.title);
   const keyPoints = compactList(lesson.key_points, "核心概念");
   const confusions = compactList(lesson.common_confusions, "常见疑点");
+  const noTextRule = "不要出现任何文字。不要出现数字、公式、符号、标签、黑板字、对白气泡或水印。";
 
   return [
     {
@@ -40,23 +59,26 @@ export function createLessonImagePrompts(lesson: LessonPlan): LessonImagePrompt[
       prompt: [
         `为一节“${title}”课程生成一张课堂故事导入插图。`,
         `画面要适合中小学生，明亮、有趣、有课堂任务感，突出${keyPoints}。`,
-        "使用温暖的教室或校园场景，人物表情专注好奇，构图清晰，少量中文板书即可。"
+        "使用温暖的教室或校园场景，人物表情专注好奇，构图清晰，用动作和道具表达课堂问题。",
+        noTextRule
       ].join(" ")
     },
     {
       title: "生活场景图",
       prompt: [
         `为“${title}”生成一张生活化数学场景图。`,
-        `画面要把抽象知识变成学生熟悉的购物、运动、路线、测量或课堂活动，避免密集文字。`,
-        `重点帮助学生看见：${keyPoints}。`
+        "画面要把抽象知识变成学生熟悉的购物、运动、路线、测量或课堂活动，用颜色、位置和人物动作组织信息。",
+        `重点帮助学生看见：${keyPoints}。`,
+        noTextRule
       ].join(" ")
     },
     {
       title: "原理观察图",
       prompt: [
         `为“${title}”生成一张原理观察图，风格为清爽教学插画。`,
-        `用图形、箭头、简单标注表现关键关系，并提醒学生容易混淆的地方：${confusions}。`,
-        "画面应便于投屏讲解，留出干净空间给老师二次提问。"
+        `用图形关系、颜色分组、空间位置和物体变化表现关键关系，并用画面对比提醒学生容易混淆的地方：${confusions}。`,
+        "画面应便于投屏讲解，留出干净空间给老师二次提问。",
+        noTextRule
       ].join(" ")
     }
   ];

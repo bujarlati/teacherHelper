@@ -47,6 +47,11 @@ export type TeacherHelperApi = {
   openDemo(demoId: string): Promise<string>;
   refreshVideo(videoId: string): Promise<VideoRecord>;
   listHistory(): Promise<{ lessons: LessonRecord[]; demos: DemoRecord[]; videos: VideoRecord[] }>;
+  deleteHistoryRecord(input: { kind: "lesson" | "demo" | "video"; id: string }): Promise<{
+    lessons: LessonRecord[];
+    demos: DemoRecord[];
+    videos: VideoRecord[];
+  }>;
 };
 
 const teacherHelperApi: TeacherHelperApi = {
@@ -79,6 +84,11 @@ const teacherHelperApi: TeacherHelperApi = {
   openDemo: (demoId) => ipcRenderer.invoke("demo:open", demoId) as Promise<string>,
   refreshVideo: (videoId) => ipcRenderer.invoke("video:refresh", videoId) as Promise<VideoRecord>,
   listHistory: () => ipcRenderer.invoke("history:list") as Promise<{
+    lessons: LessonRecord[];
+    demos: DemoRecord[];
+    videos: VideoRecord[];
+  }>,
+  deleteHistoryRecord: (input) => ipcRenderer.invoke("history:delete", input) as Promise<{
     lessons: LessonRecord[];
     demos: DemoRecord[];
     videos: VideoRecord[];

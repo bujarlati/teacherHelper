@@ -64,12 +64,14 @@ describe("createHistoryStore", () => {
         "",
         'const lessonWithoutMarkdown: LessonRecord = { id: "lesson-1", title: "标题", topic: "主题", createdAt: "2026-06-15T08:00:00.000Z" };',
         'const lessonWithWordPath: LessonRecord = { ...lessonWithoutMarkdown, wordPath: "D:/teacherHelper/output/lesson.docx" };',
+        'const lessonWithDemoPath: LessonRecord = { ...lessonWithoutMarkdown, demoId: "demo-1", demoPath: "D:/teacherHelper/output/demo" };',
         'const demo: DemoRecord = { id: "demo-1", title: "演示", problem: "x + 2 = 5", kind: "equation", demoPath: "D:/teacherHelper/output/demo.html", createdAt: "2026-06-15T08:00:00.000Z" };',
         "// @ts-expect-error originalProblem is not part of the planned demo history contract.",
         'const demoWithOriginalProblem: DemoRecord = { ...demo, originalProblem: "x + 2 = 5" };',
         "// @ts-expect-error filePath is not part of the planned demo history contract.",
         'const demoWithFilePath: DemoRecord = { ...demo, filePath: "D:/teacherHelper/output/demo.html" };',
         "void lessonWithWordPath;",
+        "void lessonWithDemoPath;",
         "void demoWithOriginalProblem;",
         "void demoWithFilePath;"
       ].join("\n"),
@@ -146,6 +148,17 @@ describe("createHistoryStore", () => {
     ]);
   });
 
+  it("saves and lists lesson demo linkage when present", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "teacherhelper-history-"));
+    const store = createHistoryStore(tempDir);
+
+    await store.addLesson(lessonRecord({ demoId: "demo-1", demoPath: "D:\\teacherHelper\\output\\demo-1" }));
+
+    await expect(store.listLessons()).resolves.toEqual([
+      lessonRecord({ demoId: "demo-1", demoPath: "D:\\teacherHelper\\output\\demo-1" })
+    ]);
+  });
+
   it("adds and lists demo records newest first", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "teacherhelper-history-"));
     const store = createHistoryStore(tempDir);
@@ -197,6 +210,23 @@ describe("createHistoryStore", () => {
         updatedAt: "2026-06-15T10:00:00.000Z"
       })
     ]);
+  });
+
+  it("deletes lesson, demo, and video records by id", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "teacherhelper-history-"));
+    const store = createHistoryStore(tempDir);
+    await store.addLesson(lessonRecord({ id: "lesson-keep" }));
+    await store.addLesson(lessonRecord({ id: "lesson-delete" }));
+    await store.addDemo(demoRecord({ id: "demo-delete" }));
+    await store.upsertVideo(videoRecord({ id: "video-delete" }));
+
+    await expect(store.deleteLesson("lesson-delete")).resolves.toEqual(lessonRecord({ id: "lesson-delete" }));
+    await expect(store.deleteDemo("demo-delete")).resolves.toEqual(demoRecord({ id: "demo-delete" }));
+    await expect(store.deleteVideo("video-delete")).resolves.toEqual(videoRecord({ id: "video-delete" }));
+
+    await expect(store.listLessons()).resolves.toEqual([lessonRecord({ id: "lesson-keep" })]);
+    await expect(store.listDemos()).resolves.toEqual([]);
+    await expect(store.listVideos()).resolves.toEqual([]);
   });
 
   it("rejects invalid history JSON without resetting it", async () => {

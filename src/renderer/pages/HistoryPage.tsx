@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReactElement } from "react";
-import type { HistoryListResult } from "../api";
+import type { HistoryDeleteInput, HistoryListResult } from "../api";
 import { api } from "../api";
 
 type StatusTone = "muted" | "success" | "error";
@@ -24,6 +24,7 @@ export function HistoryPage(): ReactElement {
   const [isLoading, setIsLoading] = useState(true);
   const [openingDemoIds, setOpeningDemoIds] = useState<Set<string>>(() => new Set());
   const [refreshingVideoIds, setRefreshingVideoIds] = useState<Set<string>>(() => new Set());
+  const [deletingRecordKeys, setDeletingRecordKeys] = useState<Set<string>>(() => new Set());
   const [selectedLesson, setSelectedLesson] = useState<LessonHistoryItem | undefined>();
   const [isCopyingLesson, setIsCopyingLesson] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -79,6 +80,9 @@ export function HistoryPage(): ReactElement {
   const isEmpty = history
     ? history.lessons.length === 0 && history.demos.length === 0 && history.videos.length === 0
     : false;
+  const selectedLessonDemo = selectedLesson && history
+    ? findLinkedDemoForLesson(selectedLesson, history.demos)
+    : undefined;
 
   async function handleRefreshVideo(videoId: string, automatic = false): Promise<void> {
     setRefreshingVideoIds((current) => new Set(current).add(videoId));
@@ -135,6 +139,31 @@ export function HistoryPage(): ReactElement {
     }
   }
 
+  async function handleDeleteHistoryRecord(kind: HistoryDeleteInput["kind"], id: string): Promise<void> {
+    const recordKey = createRecordKey(kind, id);
+    setDeletingRecordKeys((current) => new Set(current).add(recordKey));
+    setStatus({ tone: "muted", text: "正在删除历史记录..." });
+
+    try {
+      const nextHistory = await api.deleteHistoryRecord({ kind, id });
+      setHistory(nextHistory);
+      setSelectedLesson((currentLesson) => {
+        if (!currentLesson) return currentLesson;
+        const nextSelectedLesson = nextHistory.lessons.find((lesson) => lesson.id === currentLesson.id);
+        return nextSelectedLesson;
+      });
+      setStatus({ tone: "success", text: "历史记录已删除。" });
+    } catch (error) {
+      setStatus({ tone: "error", text: getErrorMessage(error, "删除历史记录失败。") });
+    } finally {
+      setDeletingRecordKeys((current) => {
+        const next = new Set(current);
+        next.delete(recordKey);
+        return next;
+      });
+    }
+  }
+
   async function handleCopyLessonMarkdown(): Promise<void> {
     if (!selectedLesson?.markdown) return;
 
@@ -167,19 +196,43 @@ export function HistoryPage(): ReactElement {
           <section aria-labelledby="lesson-history-title">
             <h2 id="lesson-history-title">教案</h2>
             <ul className="record-list">
-              {history.lessons.map((lesson) => (
-                <li key={lesson.id} className={selectedLesson?.id === lesson.id ? "selected-record" : ""}>
-                  <strong>{lesson.title}</strong>
-                  <span>课题：{lesson.topic}</span>
-                  <span>{formatDate(lesson.createdAt)}</span>
-                  {lesson.wordPath ? <span>{lesson.wordPath}</span> : null}
-                  <div className="record-actions">
-                    <button type="button" className="secondary-button" onClick={() => handleOpenLesson(lesson)}>
-                      查看教案
-                    </button>
-                  </div>
-                </li>
-              ))}
+              {history.lessons.map((lesson) => {
+                const linkedDemo = findLinkedDemoForLesson(lesson, history.demos);
+
+                return (
+                  <li key={lesson.id} className={selectedLesson?.id === lesson.id ? "selected-record" : ""}>
+                    <strong>{lesson.title}</strong>
+                    <span>课题：{lesson.topic}</span>
+                    <span>{formatDate(lesson.createdAt)}</span>
+                    {lesson.wordPath ? <span>{lesson.wordPath}</span> : null}
+                    {linkedDemo ? <span>课件：{linkedDemo.demoPath}</span> : null}
+                    <div className="record-actions">
+                      <button type="button" className="secondary-button" onClick={() => handleOpenLesson(lesson)}>
+                        查看教案
+                      </button>
+                      {linkedDemo ? (
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          disabled={openingDemoIds.has(linkedDemo.id)}
+                          onClick={() => void handleOpenDemo(linkedDemo)}
+                        >
+                          打开课件
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        aria-label={`删除教案 ${lesson.title}`}
+                        disabled={deletingRecordKeys.has(createRecordKey("lesson", lesson.id))}
+                        onClick={() => void handleDeleteHistoryRecord("lesson", lesson.id)}
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </section>
 
@@ -200,6 +253,15 @@ export function HistoryPage(): ReactElement {
                       onClick={() => void handleOpenDemo(demo)}
                     >
                       打开演示
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      aria-label={`删除演示 ${demo.title}`}
+                      disabled={deletingRecordKeys.has(createRecordKey("demo", demo.id))}
+                      onClick={() => void handleDeleteHistoryRecord("demo", demo.id)}
+                    >
+                      删除
                     </button>
                   </div>
                 </li>
@@ -228,8 +290,8 @@ export function HistoryPage(): ReactElement {
                   ) : null}
                   {video.localVideoPath ? <span>本地保存：{video.localVideoPath}</span> : null}
                   {video.reason ? <span>{video.reason}</span> : null}
-                  {canRefreshVideo(video.status) ? (
-                    <div className="record-actions">
+                  <div className="record-actions">
+                    {canRefreshVideo(video.status) ? (
                       <button
                         type="button"
                         className="secondary-button"
@@ -238,8 +300,17 @@ export function HistoryPage(): ReactElement {
                       >
                         刷新状态
                       </button>
-                    </div>
-                  ) : null}
+                    ) : null}
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      aria-label={`删除视频 ${video.id}`}
+                      disabled={deletingRecordKeys.has(createRecordKey("video", video.id))}
+                      onClick={() => void handleDeleteHistoryRecord("video", video.id)}
+                    >
+                      删除
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -262,6 +333,16 @@ export function HistoryPage(): ReactElement {
             >
               复制 Markdown
             </button>
+            {selectedLessonDemo ? (
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={openingDemoIds.has(selectedLessonDemo.id)}
+                onClick={() => void handleOpenDemo(selectedLessonDemo)}
+              >
+                打开课件
+              </button>
+            ) : null}
           </div>
           {selectedLesson.markdown ? (
             <pre className="markdown-output">{selectedLesson.markdown}</pre>
@@ -281,6 +362,17 @@ function formatDate(value: string): string {
   }
 
   return date.toLocaleString();
+}
+
+function findLinkedDemoForLesson(
+  lesson: LessonHistoryItem,
+  demos: DemoHistoryItem[]
+): DemoHistoryItem | undefined {
+  return demos.find((demo) => demo.id === lesson.demoId) ?? demos.find((demo) => demo.id === lesson.id);
+}
+
+function createRecordKey(kind: HistoryDeleteInput["kind"], id: string): string {
+  return `${kind}:${id}`;
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {

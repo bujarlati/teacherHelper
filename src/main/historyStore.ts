@@ -9,6 +9,8 @@ export type LessonRecord = {
   createdAt: string;
   markdown?: string;
   wordPath?: string;
+  demoId?: string;
+  demoPath?: string;
 };
 
 export type DemoRecord = {
@@ -58,6 +60,14 @@ function replaceById<T extends { id: string }>(records: T[], record: T): T[] {
   return [record, ...records.filter((item) => item.id !== record.id)];
 }
 
+function removeById<T extends { id: string }>(records: T[], id: string): { records: T[]; removed?: T } {
+  const removed = records.find((item) => item.id === id);
+  return {
+    records: records.filter((item) => item.id !== id),
+    ...(removed ? { removed } : {})
+  };
+}
+
 export function createHistoryStore(baseDir: string) {
   const filePath = join(baseDir, "history.json");
 
@@ -83,6 +93,17 @@ export function createHistoryStore(baseDir: string) {
       return sortByCreatedAtDescending(history.lessons);
     },
 
+    async deleteLesson(id: string): Promise<LessonRecord | undefined> {
+      const history = await loadHistory();
+      const result = removeById(history.lessons, id);
+      await saveHistory({
+        ...history,
+        lessons: result.records
+      });
+
+      return result.removed;
+    },
+
     async addDemo(record: DemoRecord): Promise<void> {
       const history = await loadHistory();
       await saveHistory({
@@ -96,6 +117,17 @@ export function createHistoryStore(baseDir: string) {
       return sortByCreatedAtDescending(history.demos);
     },
 
+    async deleteDemo(id: string): Promise<DemoRecord | undefined> {
+      const history = await loadHistory();
+      const result = removeById(history.demos, id);
+      await saveHistory({
+        ...history,
+        demos: result.records
+      });
+
+      return result.removed;
+    },
+
     async upsertVideo(record: VideoRecord): Promise<void> {
       const history = await loadHistory();
       await saveHistory({
@@ -107,6 +139,17 @@ export function createHistoryStore(baseDir: string) {
     async listVideos(): Promise<VideoRecord[]> {
       const history = await loadHistory();
       return sortByCreatedAtDescending(history.videos);
+    },
+
+    async deleteVideo(id: string): Promise<VideoRecord | undefined> {
+      const history = await loadHistory();
+      const result = removeById(history.videos, id);
+      await saveHistory({
+        ...history,
+        videos: result.records
+      });
+
+      return result.removed;
     }
   };
 }

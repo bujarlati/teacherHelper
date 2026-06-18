@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -205,13 +205,22 @@ describe("registerWorkflowIpcHandlers", () => {
         url: "http://127.0.0.1:8123/"
       }
     });
-    expect(addedLessons).toEqual([{
+    expect(addedLessons[0]).toEqual({
       id: "lesson-1",
       title: lesson.title,
       topic: "一次函数",
       markdown: lesson.markdown,
       createdAt
-    }]);
+    });
+    expect(addedLessons.at(-1)).toEqual({
+      id: "lesson-1",
+      title: lesson.title,
+      topic: "一次函数",
+      markdown: lesson.markdown,
+      createdAt,
+      demoId: "lesson-1",
+      demoPath: join(tmpDir, "local-demos", "lesson-1")
+    });
     expect(addedDemos).toEqual([{
       id: "lesson-1",
       title: lesson.title,
@@ -266,6 +275,34 @@ describe("registerWorkflowIpcHandlers", () => {
       createdAt: "2026-06-15T01:02:03.000Z"
     }]);
     expect(upsertVideo).not.toHaveBeenCalled();
+  });
+
+  it("links generated lesson history to its local teaching demo path", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const addedLessons: LessonRecord[] = [];
+
+    registerWorkflowIpcHandlers(fakeIpcMain, createBaseDeps({
+      historyStore: {
+        addLesson: async (record: LessonRecord) => { addedLessons.push(record); },
+        addDemo: vi.fn(),
+        upsertVideo: vi.fn(),
+        listLessons: vi.fn(),
+        listDemos: vi.fn(),
+        listVideos: vi.fn()
+      },
+      createId: () => "lesson-1",
+      generateLessonPlan: vi.fn().mockResolvedValue(lesson),
+      startDemoServer: vi.fn().mockResolvedValue({ url: "http://127.0.0.1:8123/", close: vi.fn() })
+    }));
+
+    await fakeIpcMain.handlers.get("lesson:generate")?.({}, " 一次函数 ");
+
+    expect(addedLessons.at(-1)).toEqual(expect.objectContaining({
+      id: "lesson-1",
+      title: lesson.title,
+      demoId: "lesson-1",
+      demoPath: join(tmpDir, "local-demos", "lesson-1")
+    }));
   });
 
   it("generates lesson image assets and injects them into the local teaching demo", async () => {
@@ -783,6 +820,62 @@ describe("registerWorkflowIpcHandlers", () => {
     await expect(fakeIpcMain.handlers.get("demo:open")?.({}, " demo-1 ")).resolves.toBe("http://127.0.0.1:4321/");
     expect(startDemoServer).toHaveBeenCalledWith(demoPath);
     expect(openExternal).toHaveBeenCalledWith("http://127.0.0.1:4321/");
+  });
+
+  it("deletes a lesson history record and its linked local HTML demo", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const demoPath = join(tmpDir, "local-demos", "lesson-1");
+    await mkdir(demoPath, { recursive: true });
+    await writeFile(join(demoPath, "index.html"), "<!doctype html><title>lesson</title>", "utf8");
+    let lessons: LessonRecord[] = [{
+      id: "lesson-1",
+      title: "L",
+      topic: "T",
+      markdown: "# L",
+      demoId: "lesson-1",
+      demoPath,
+      createdAt: "2026-06-15"
+    }];
+    let demos: DemoRecord[] = [{
+      id: "lesson-1",
+      title: "L",
+      problem: "P",
+      kind: "simple",
+      demoPath,
+      createdAt: "2026-06-15"
+    }];
+    const deleteLesson = vi.fn(async (id: string) => {
+      const record = lessons.find((item) => item.id === id);
+      lessons = lessons.filter((item) => item.id !== id);
+      return record;
+    });
+    const deleteDemo = vi.fn(async (id: string) => {
+      const record = demos.find((item) => item.id === id);
+      demos = demos.filter((item) => item.id !== id);
+      return record;
+    });
+
+    registerWorkflowIpcHandlers(fakeIpcMain, createBaseDeps({
+      historyStore: {
+        addLesson: vi.fn(),
+        addDemo: vi.fn(),
+        upsertVideo: vi.fn(),
+        listLessons: vi.fn(async () => lessons),
+        listDemos: vi.fn(async () => demos),
+        listVideos: vi.fn(async () => []),
+        deleteLesson,
+        deleteDemo,
+        deleteVideo: vi.fn()
+      }
+    }));
+
+    await expect(fakeIpcMain.handlers.get("history:delete")?.({}, {
+      kind: "lesson",
+      id: "lesson-1"
+    })).resolves.toEqual({ lessons: [], demos: [], videos: [] });
+    expect(deleteLesson).toHaveBeenCalledWith("lesson-1");
+    expect(deleteDemo).toHaveBeenCalledWith("lesson-1");
+    await expect(readFile(join(demoPath, "index.html"), "utf8")).rejects.toThrow();
   });
 
   it("refreshes a video task status and saves the updated record", async () => {
