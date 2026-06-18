@@ -43,6 +43,7 @@ describe("buildLessonPrompt", () => {
     expect(combined).toContain("video_prompt");
     expect(combined).toContain("只返回 JSON");
     expect(combined).toContain("控制输出体量");
+    expect(combined).toContain("本地互动课件");
   });
 });
 

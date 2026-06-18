@@ -78,6 +78,34 @@ describe("renderTeachingDemoHtml", () => {
     expect(document.querySelector("#feedback")?.textContent).toContain("判断正确");
   });
 
+  test("renders lesson examples as executable step-by-step interactions", () => {
+    const html = renderTeachingDemoHtml({
+      title: "一元一次方程",
+      prompt: "用天平演示一元一次方程 3x + 2 = 11",
+      script: "观察等式两边。\n两边同时减 2。\n两边同时除以 3。",
+      exampleQuestions: [{ question: "3x + 2 = 11，求 x。", answer: "x = 3" }],
+      workedSolutions: [{
+        question: "3x + 2 = 11，求 x。",
+        steps: ["两边同时减 2，得到 3x = 9。", "两边同时除以 3，得到 x = 3。"],
+        answer: "x = 3"
+      }]
+    });
+    const dom = new JSDOM(html, { runScripts: "dangerously" });
+    const document = dom.window.document;
+
+    expect(document.querySelector("[data-example-card]")?.textContent).toContain("3x + 2 = 11");
+    expect(document.querySelector("[data-example-step-output]")?.textContent).toContain("点击“下一步”");
+
+    document.querySelector<HTMLButtonElement>("[data-example-next]")?.click();
+    expect(document.querySelector("[data-example-step-output]")?.textContent).toContain("两边同时减 2");
+
+    document.querySelector<HTMLButtonElement>("[data-example-next]")?.click();
+    expect(document.querySelector("[data-example-step-output]")?.textContent).toContain("两边同时除以 3");
+
+    document.querySelector<HTMLButtonElement>("[data-example-answer]")?.click();
+    expect(document.querySelector("[data-example-answer-output]")?.textContent).toContain("x = 3");
+  });
+
   test("escapes unsafe text from prompts and scripts", () => {
     const html = renderTeachingDemoHtml({
       title: "<script>alert(1)</script>",

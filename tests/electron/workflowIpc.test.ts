@@ -213,7 +213,9 @@ describe("registerWorkflowIpcHandlers", () => {
     expect(renderTeachingDemoHtml).toHaveBeenCalledWith({
       title: lesson.title,
       prompt: lesson.video_prompt,
-      script: lesson.video_script
+      script: lesson.video_script,
+      exampleQuestions: lesson.example_questions,
+      workedSolutions: lesson.worked_solutions
     });
     await expect(readFile(join(tmpDir, "local-demos", "lesson-1", "index.html"), "utf8")).resolves.toContain("lesson demo");
     expect(openExternal).toHaveBeenCalledWith("http://127.0.0.1:8123/");

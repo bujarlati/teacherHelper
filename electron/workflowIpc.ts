@@ -156,7 +156,16 @@ const generateVideoInputSchema = z.object({
 });
 const localTeachingDemoInputSchema = z.object({
   prompt: nonEmptyStringSchema,
-  script: optionalTrimmedStringSchema
+  script: optionalTrimmedStringSchema,
+  exampleQuestions: z.array(z.object({
+    question: nonEmptyStringSchema,
+    answer: nonEmptyStringSchema
+  })).optional(),
+  workedSolutions: z.array(z.object({
+    question: nonEmptyStringSchema,
+    steps: z.array(nonEmptyStringSchema),
+    answer: nonEmptyStringSchema
+  })).optional()
 });
 const exportLessonInputSchema = z.object({
   id: z.string().trim().min(1),
@@ -219,7 +228,9 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
     try {
       const demoResult = await generateLocalTeachingDemo({
         prompt: lesson.video_prompt,
-        script: lesson.video_script
+        script: lesson.video_script,
+        exampleQuestions: lesson.example_questions,
+        workedSolutions: lesson.worked_solutions
       }, deps, activeDemoServer, {
         id,
         title: lesson.title
@@ -465,7 +476,9 @@ async function generateLocalTeachingDemo(
   const html = deps.renderTeachingDemoHtml({
     title,
     prompt: parsed.prompt,
-    script: parsed.script
+    script: parsed.script,
+    ...(parsed.exampleQuestions ? { exampleQuestions: parsed.exampleQuestions } : {}),
+    ...(parsed.workedSolutions ? { workedSolutions: parsed.workedSolutions } : {})
   });
   const demoDir = join(deps.dataDir, "local-demos", id);
 

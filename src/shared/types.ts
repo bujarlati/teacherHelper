@@ -94,6 +94,8 @@ export type VideoGenerateInput = {
 export type LocalTeachingDemoInput = {
   prompt: string;
   script?: string;
+  exampleQuestions?: Array<{ question: string; answer: string }>;
+  workedSolutions?: Array<{ question: string; steps: string[]; answer: string }>;
 };
 
 export type LocalTeachingDemoResult = {

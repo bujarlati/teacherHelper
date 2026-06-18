@@ -2,9 +2,16 @@ type RenderTeachingDemoInput = {
   title: string;
   prompt: string;
   script?: string;
+  exampleQuestions?: Array<{ question: string; answer: string }>;
+  workedSolutions?: Array<{ question: string; steps: string[]; answer: string }>;
 };
 
 type CoursewareTemplate = "function" | "balance" | "number-line" | "generic";
+type InteractiveExample = {
+  question: string;
+  steps: string[];
+  answer: string;
+};
 
 export function renderTeachingDemoHtml(input: RenderTeachingDemoInput): string {
   const title = input.title.trim() || "本地互动课件";
@@ -12,6 +19,7 @@ export function renderTeachingDemoHtml(input: RenderTeachingDemoInput): string {
   const steps = splitScriptIntoSteps(input.script || input.prompt);
   const template = chooseTemplate(`${title}\n${prompt}\n${input.script || ""}`);
   const coursewareSummary = createCoursewareSummary(steps, prompt);
+  const interactiveExamples = createInteractiveExamples(input);
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -194,6 +202,55 @@ export function renderTeachingDemoHtml(input: RenderTeachingDemoInput): string {
     .quiz-options {
       display: grid;
       gap: 8px;
+    }
+
+    .example-lab {
+      display: grid;
+      gap: 12px;
+      padding: 16px;
+      border: 1px solid #d9e0ea;
+      border-radius: 8px;
+      background: #fbfcfe;
+    }
+
+    .example-lab h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .example-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .example-card {
+      display: grid;
+      gap: 10px;
+      border: 1px solid #d9e0ea;
+      border-radius: 8px;
+      padding: 12px;
+      background: #ffffff;
+    }
+
+    .example-question {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 800;
+      line-height: 1.5;
+    }
+
+    .example-output {
+      min-height: 44px;
+      border-radius: 6px;
+      padding: 10px 12px;
+      background: #f3f7fb;
+      color: #263247;
+      line-height: 1.6;
+    }
+
+    .example-answer {
+      color: #1d6b48;
+      font-weight: 800;
     }
 
     #feedback {
@@ -412,6 +469,7 @@ export function renderTeachingDemoHtml(input: RenderTeachingDemoInput): string {
         <div class="controls">
           ${renderTemplateControls(template)}
         </div>
+        ${renderInteractiveExamples(interactiveExamples)}
       </section>
       <aside class="side-panel">
         <h2>教师提示</h2>
@@ -427,6 +485,8 @@ export function renderTeachingDemoHtml(input: RenderTeachingDemoInput): string {
     </section>
   </main>
   <script>
+    const exampleData = ${serializeScriptJson(interactiveExamples)};
+    const exampleStepIndexes = exampleData.map(() => 0);
     const steps = Array.from(document.querySelectorAll(".step-card"));
     let currentStep = 0;
     let autoplayTimer = null;
@@ -474,6 +534,64 @@ export function renderTeachingDemoHtml(input: RenderTeachingDemoInput): string {
         const feedback = document.getElementById("feedback");
         if (!feedback) return;
         feedback.textContent = button.dataset.correct === "true" || button.dataset.correct === "positive-slope" ? "判断正确，可以追问学生为什么。" : "还不对，回到演示区再观察一次。";
+      });
+    });
+
+    function updateExampleCard(index) {
+      const example = exampleData[index];
+      const card = document.querySelector("[data-example-card='" + index + "']");
+      if (!example || !card) return;
+
+      const stepOutput = card.querySelector("[data-example-step-output]");
+      const answerOutput = card.querySelector("[data-example-answer-output]");
+      const stepIndex = exampleStepIndexes[index] || 0;
+      if (stepOutput) {
+        if (stepIndex <= 0) {
+          stepOutput.textContent = "点击“下一步”逐步讲解这道例题。";
+        } else {
+          stepOutput.textContent = "第 " + stepIndex + " 步：" + example.steps[stepIndex - 1];
+        }
+      }
+      if (answerOutput && !answerOutput.dataset.visible) {
+        answerOutput.textContent = "";
+      }
+    }
+
+    document.querySelectorAll("[data-example-next]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const index = Number(button.dataset.exampleNext);
+        const example = exampleData[index];
+        if (!example) return;
+
+        exampleStepIndexes[index] = Math.min((exampleStepIndexes[index] || 0) + 1, example.steps.length);
+        updateExampleCard(index);
+      });
+    });
+
+    document.querySelectorAll("[data-example-answer]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const index = Number(button.dataset.exampleAnswer);
+        const example = exampleData[index];
+        const card = document.querySelector("[data-example-card='" + index + "']");
+        const answerOutput = card?.querySelector("[data-example-answer-output]");
+        if (!example || !answerOutput) return;
+
+        answerOutput.dataset.visible = "true";
+        answerOutput.textContent = "答案：" + example.answer;
+      });
+    });
+
+    document.querySelectorAll("[data-example-reset]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const index = Number(button.dataset.exampleReset);
+        const card = document.querySelector("[data-example-card='" + index + "']");
+        const answerOutput = card?.querySelector("[data-example-answer-output]");
+        exampleStepIndexes[index] = 0;
+        if (answerOutput) {
+          delete answerOutput.dataset.visible;
+          answerOutput.textContent = "";
+        }
+        updateExampleCard(index);
       });
     });
 
@@ -569,6 +687,7 @@ export function renderTeachingDemoHtml(input: RenderTeachingDemoInput): string {
 
     showStep(0);
     resetTemplate();
+    exampleData.forEach((_, index) => updateExampleCard(index));
   </script>
 </body>
 </html>`;
@@ -675,6 +794,32 @@ function renderTemplateControls(template: CoursewareTemplate): string {
   return `<button class="action-button" type="button" onclick="document.getElementById('feedback').textContent='先让学生回答，再点击下一步。'">生成课堂追问</button>`;
 }
 
+function renderInteractiveExamples(examples: InteractiveExample[]): string {
+  if (examples.length === 0) {
+    return "";
+  }
+
+  return `<section class="example-lab" aria-label="例题互动">
+          <h2>例题互动</h2>
+          <div class="example-grid">
+            ${examples.map((example, index) => renderInteractiveExample(example, index)).join("\n            ")}
+          </div>
+        </section>`;
+}
+
+function renderInteractiveExample(example: InteractiveExample, index: number): string {
+  return `<article class="example-card" data-example-card="${index}">
+              <p class="example-question">${escapeHtml(example.question)}</p>
+              <div class="example-output" data-example-step-output></div>
+              <div class="example-output example-answer" data-example-answer-output></div>
+              <div class="toolbar">
+                <button type="button" data-example-next="${index}">下一步</button>
+                <button type="button" data-example-answer="${index}">显示答案</button>
+                <button type="button" data-example-reset="${index}">重做</button>
+              </div>
+            </article>`;
+}
+
 function renderQuizOptions(template: CoursewareTemplate): string {
   if (template === "function") {
     return `<button class="quiz-option" type="button" data-correct="positive-slope">k &gt; 0 时图像从左到右上升</button>
@@ -744,6 +889,60 @@ function splitScriptIntoSteps(value: string): string[] {
     : Array.from(value.matchAll(/[^。！？.!?\r\n]+[。！？.!?]?/gu), (match) => match[0].trim()).filter(Boolean);
 
   return (segments.length ? segments : ["观察题意", "分步推理", "得到结论"]).slice(0, 6);
+}
+
+function createInteractiveExamples(input: RenderTeachingDemoInput): InteractiveExample[] {
+  const workedSolutions = input.workedSolutions ?? [];
+  const examplesFromWorkedSolutions = workedSolutions
+    .map((item) => normalizeInteractiveExample({
+      question: item.question,
+      steps: item.steps,
+      answer: item.answer
+    }))
+    .filter((item): item is InteractiveExample => Boolean(item));
+
+  const workedQuestions = new Set(examplesFromWorkedSolutions.map((item) => item.question));
+  const examplesFromQuestions = (input.exampleQuestions ?? [])
+    .filter((item) => !workedQuestions.has(item.question))
+    .map((item) => normalizeInteractiveExample({
+      question: item.question,
+      steps: createFallbackExampleSteps(item.question, item.answer),
+      answer: item.answer
+    }))
+    .filter((item): item is InteractiveExample => Boolean(item));
+
+  return [...examplesFromWorkedSolutions, ...examplesFromQuestions].slice(0, 4);
+}
+
+function normalizeInteractiveExample(value: InteractiveExample): InteractiveExample | undefined {
+  const question = value.question.trim();
+  const answer = value.answer.trim();
+  const steps = value.steps.map((step) => step.trim()).filter(Boolean);
+
+  if (!question || !answer) {
+    return undefined;
+  }
+
+  return {
+    question,
+    answer,
+    steps: steps.length > 0 ? steps : createFallbackExampleSteps(question, answer)
+  };
+}
+
+function createFallbackExampleSteps(question: string, answer: string): string[] {
+  return [
+    `读题并圈出关键信息：${question}`,
+    "让学生先独立写出第一步，再观察是否使用了本节课方法。",
+    `核对结果：${answer}`
+  ];
+}
+
+function serializeScriptJson(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026");
 }
 
 function escapeHtml(value: string): string {
