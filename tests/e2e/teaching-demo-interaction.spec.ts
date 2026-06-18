@@ -25,6 +25,11 @@ test("generated teaching courseware has working controls and no raw English prom
     await page.goto(server.url);
 
     await expect(page.getByText("A classroom animation for y=kx+b with slope and intercept.")).toHaveCount(0);
+    await expect(page.locator(".step-card.is-active")).toContainText("故事导入");
+
+    for (let index = 0; index < 4; index += 1) {
+      await page.locator("#next-step").click();
+    }
     await expect(page.locator(".step-card.is-active")).toContainText("观察 k 改变时图像如何转动。");
 
     await page.locator("#next-step").click();
@@ -38,6 +43,10 @@ test("generated teaching courseware has working controls and no raw English prom
     });
     const after = await page.locator("#function-line").evaluate((node) => node.getAttribute("y1"));
     expect(after).not.toBe(before);
+
+    await page.locator("#next-step").click();
+    await page.locator("#next-step").click();
+    await expect(page.locator("[data-example-lab]")).toBeVisible();
 
     await page.locator("[data-example-next='0']").click();
     await expect(page.locator("[data-example-step-output]").first()).toContainText("k=2");

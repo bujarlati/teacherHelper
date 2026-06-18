@@ -16,10 +16,16 @@ type InteractiveExample = {
 export function renderTeachingDemoHtml(input: RenderTeachingDemoInput): string {
   const title = input.title.trim() || "本地互动课件";
   const prompt = input.prompt.trim();
-  const steps = splitScriptIntoSteps(input.script || input.prompt);
   const template = chooseTemplate(`${title}\n${prompt}\n${input.script || ""}`);
-  const coursewareSummary = createCoursewareSummary(steps, prompt);
   const interactiveExamples = createInteractiveExamples(input);
+  const scriptSteps = splitScriptIntoSteps(input.script || input.prompt);
+  const steps = createCoursewareSteps({
+    title,
+    template,
+    scriptSteps,
+    hasExamples: interactiveExamples.length > 0
+  });
+  const coursewareSummary = createCoursewareSummary(steps, prompt);
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -564,6 +570,10 @@ export function renderTeachingDemoHtml(input: RenderTeachingDemoInput): string {
       steps.forEach((step, stepIndex) => {
         step.classList.toggle("is-active", stepIndex === currentStep);
       });
+      const exampleLab = document.querySelector("[data-example-lab]");
+      if (exampleLab) {
+        exampleLab.hidden = steps[currentStep]?.dataset.stage !== "example";
+      }
       const note = document.getElementById("teacher-note");
       if (note) {
         note.textContent = steps[currentStep]?.dataset.teacherNote || note.textContent;
@@ -818,8 +828,69 @@ export function renderTeachingDemoHtml(input: RenderTeachingDemoInput): string {
 </html>`;
 }
 
+function createCoursewareSteps(input: {
+  title: string;
+  template: CoursewareTemplate;
+  scriptSteps: string[];
+  hasExamples: boolean;
+}): string[] {
+  const guidedScriptSteps = input.scriptSteps
+    .map((step) => step.trim())
+    .filter(Boolean)
+    .slice(0, 4);
+
+  return [
+    createStoryLeadStep(input.title, input.template),
+    createScenarioStep(input.title, input.template),
+    createPrincipleStep(input.title, input.template),
+    createExplorationStep(input.template),
+    ...guidedScriptSteps.map((step) => `课堂推进：${step}`),
+    ...(input.hasExamples ? ["例题迁移：用刚才发现的原理解决一道题，先让学生说思路，再逐步显示解法。"] : [])
+  ];
+}
+
+function createStoryLeadStep(title: string, template: CoursewareTemplate): string {
+  if (template === "function") return "故事导入：校园记录员发现气温、路程或费用会随着一个量变化，请学生猜背后的规律。";
+  if (template === "balance") return "故事导入：公平小裁判遇到一架天平，只有两边做同样的事，规则才不会被破坏。";
+  if (template === "number-line") return "故事导入：小探险家站在数轴小路上，每一次前进都要从刚才停下的位置继续出发。";
+  if (template === "arithmetic") return "故事导入：运算王国要排队过桥，谁先过、谁后过，会改变最后的结果。";
+
+  return `故事导入：把“${title}”变成一个课堂任务，请学生先猜今天要寻找的规则。`;
+}
+
+function createScenarioStep(title: string, template: CoursewareTemplate): string {
+  if (template === "function") return "生活场景：观察打车费用、温度变化或跑步距离，找出一个量变了，另一个量怎样跟着变。";
+  if (template === "balance") return "生活场景：把未知数看成遮住标签的砝码，先判断怎样操作才能保持左右公平。";
+  if (template === "number-line") return "生活场景：把 A+B 想成两段路，第一段走完后，第二段必须从新的位置继续走。";
+  if (template === "arithmetic") return "生活场景：把一道混合运算看成多项任务，先判断哪些任务必须先完成。";
+
+  return `生活场景：联系学生熟悉的校园、购物或游戏情境，先说出“${title}”可能解决什么问题。`;
+}
+
+function createPrincipleStep(title: string, template: CoursewareTemplate): string {
+  if (template === "function") return "原理观察：先不急着算，观察图像、数值和语言描述之间有什么不变关系。";
+  if (template === "balance") return "原理观察：等式两边同时做同一种操作，等号关系才会继续成立。";
+  if (template === "number-line") return "原理观察：加法表示连续合并，第二段的起点就是第一段的终点。";
+  if (template === "arithmetic") return "原理观察：乘除先形成小结果，加减再把这些小结果合并。";
+
+  return `原理观察：先找“${title}”里的关键条件、变化关系和不变规则。`;
+}
+
+function createExplorationStep(template: CoursewareTemplate): string {
+  if (template === "function") return "互动探索：拖动参数，先让学生描述变化，再追问为什么会这样变化。";
+  if (template === "balance") return "互动探索：点击等式变形按钮，每次操作前先预测天平是否仍然平衡。";
+  if (template === "number-line") return "互动探索：拖动 A 和 B 的长度，先预测终点，再用数轴验证。";
+  if (template === "arithmetic") return "互动探索：先判断第一步，再逐步执行运算，观察表达式怎样变短。";
+
+  return "互动探索：先预测，再操作，最后请学生用自己的话解释理由。";
+}
+
+function getStepStage(step: string): string {
+  return step.startsWith("例题迁移") ? "example" : "lesson";
+}
+
 function renderStep(step: string, index: number): string {
-  return `<article class="step-card${index === 0 ? " is-active" : ""}" data-step="${index + 1}" data-teacher-note="${escapeHtmlAttribute(createStepTeacherNote(step, index))}">
+  return `<article class="step-card${index === 0 ? " is-active" : ""}" data-step="${index + 1}" data-stage="${getStepStage(step)}" data-teacher-note="${escapeHtmlAttribute(createStepTeacherNote(step, index))}">
             <div class="step-label">步骤 ${index + 1}</div>
             <p class="step-text">${escapeHtml(step)}</p>
           </article>`;
@@ -951,7 +1022,7 @@ function renderInteractiveExamples(examples: InteractiveExample[]): string {
     return "";
   }
 
-  return `<section class="example-lab" aria-label="例题互动">
+  return `<section class="example-lab" aria-label="例题互动" data-example-lab hidden>
           <h2>例题互动</h2>
           <div class="example-grid">
             ${examples.map((example, index) => renderInteractiveExample(example, index)).join("\n            ")}

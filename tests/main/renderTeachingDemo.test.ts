@@ -75,6 +75,24 @@ describe("renderTeachingDemoHtml", () => {
     expect(document.querySelector("#arithmetic-result")?.textContent).toContain("14");
   });
 
+  test("starts courseware with story and principle before exercises", () => {
+    const html = renderTeachingDemoHtml({
+      title: "分数加法",
+      prompt: "讲解分数加法的意义",
+      script: "例题：1/2 + 1/3 怎么算？\n通分后相加。",
+      exampleQuestions: [{ question: "1/2 + 1/3 = ?", answer: "5/6" }]
+    });
+    const dom = new JSDOM(html, { runScripts: "dangerously" });
+    const document = dom.window.document;
+    const cards = Array.from(document.querySelectorAll(".step-card"));
+
+    expect(document.querySelector(".step-card.is-active")?.textContent).toContain("故事导入");
+    expect(cards[0]?.textContent).not.toContain("例题：1/2 + 1/3");
+    expect(cards[1]?.textContent).toContain("生活场景");
+    expect(cards[2]?.textContent).toContain("原理观察");
+    expect(cards.some((card) => card.textContent?.includes("例题迁移"))).toBe(true);
+  });
+
   test("generated controls execute in the browser document", () => {
     const html = renderTeachingDemoHtml({
       title: "一次函数复习",
@@ -84,6 +102,11 @@ describe("renderTeachingDemoHtml", () => {
     const dom = new JSDOM(html, { runScripts: "dangerously" });
     const document = dom.window.document;
 
+    expect(document.querySelector(".step-card.is-active")?.textContent).toContain("故事导入");
+
+    for (let index = 0; index < 4; index += 1) {
+      document.querySelector<HTMLButtonElement>("#next-step")?.click();
+    }
     expect(document.querySelector(".step-card.is-active")?.textContent).toContain("观察 k 改变时图像如何转动。");
 
     document.querySelector<HTMLButtonElement>("#next-step")?.click();
@@ -116,8 +139,14 @@ describe("renderTeachingDemoHtml", () => {
     const dom = new JSDOM(html, { runScripts: "dangerously" });
     const document = dom.window.document;
 
+    expect(document.querySelector<HTMLElement>("[data-example-lab]")?.hidden).toBe(true);
     expect(document.querySelector("[data-example-card]")?.textContent).toContain("3x + 2 = 11");
     expect(document.querySelector("[data-example-step-output]")?.textContent).toContain("点击“下一步”");
+
+    for (let index = 0; index < 7; index += 1) {
+      document.querySelector<HTMLButtonElement>("#next-step")?.click();
+    }
+    expect(document.querySelector<HTMLElement>("[data-example-lab]")?.hidden).toBe(false);
 
     document.querySelector<HTMLButtonElement>("[data-example-next]")?.click();
     expect(document.querySelector("[data-example-step-output]")?.textContent).toContain("两边同时减 2");
