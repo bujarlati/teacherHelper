@@ -68,7 +68,7 @@ describe("generateLessonPlan", () => {
       apiKey: "key",
       modelName: "Qwen/Qwen3-32B",
       messages: buildLessonPrompt("一元一次方程"),
-      maxTokens: 4096,
+      maxTokens: 8192,
       temperature: 0.4,
       responseFormat: { type: "json_object" },
       thinkingBudget: 64
@@ -78,6 +78,40 @@ describe("generateLessonPlan", () => {
   it("strips json fenced model output before parsing", async () => {
     const fakeClient = {
       chatCompletion: async () => `\`\`\`json\n${JSON.stringify(completeLessonPlan())}\n\`\`\``
+    };
+
+    await expect(
+      generateLessonPlan({
+        topic: "一元一次方程",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({ title: "一元一次方程" });
+  });
+
+  it("extracts a fenced JSON object when the model adds surrounding text", async () => {
+    const fakeClient = {
+      chatCompletion: async () => [
+        "好的，下面是结构化教案 JSON：",
+        "```json",
+        JSON.stringify(completeLessonPlan()),
+        "```",
+        "如果需要，我也可以继续补充课堂活动。"
+      ].join("\n")
+    };
+
+    await expect(
+      generateLessonPlan({
+        topic: "一元一次方程",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({ title: "一元一次方程" });
+  });
+
+  it("extracts the first complete JSON object when the model adds prose outside JSON", async () => {
+    const fakeClient = {
+      chatCompletion: async () => `教案如下：\n${JSON.stringify(completeLessonPlan())}\n以上 JSON 可直接使用。`
     };
 
     await expect(

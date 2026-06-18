@@ -69,13 +69,13 @@ export async function generateLessonPlan(input: {
     apiKey: input.config.apiKey,
     modelName: input.config.modelName,
     messages: buildLessonPrompt(input.topic),
-    maxTokens: 4096,
+    maxTokens: 8192,
     temperature: 0.4,
     responseFormat: { type: "json_object" },
     thinkingBudget: 64
   });
 
-  const parsedJson = parseLessonJson(stripCodeFence(raw));
+  const parsedJson = parseLessonJson(raw);
   const parsedPlan = parseLessonPlan(parsedJson);
 
   return {
@@ -141,11 +141,17 @@ function stripCodeFence(value: string): string {
 }
 
 function parseLessonJson(value: string): unknown {
-  try {
-    return JSON.parse(value);
-  } catch {
-    throw new Error("模型返回的教案 JSON 无法解析，请重试。");
+  const candidates = createJsonCandidates(value);
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // Try the next candidate extracted from the model response.
+    }
   }
+
+  throw new Error("模型返回的教案 JSON 无法解析，请重试。");
 }
 
 function parseLessonPlan(value: unknown): ModelLessonPlan {
@@ -313,6 +319,80 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function cleanListItem(value: string): string {
   return value.replace(/^\s*(?:[-*•]\s*)?(?:(?:\d+[.、)]|\(\d+\)|（\d+）)\s*)?/, "").trim();
+}
+
+function createJsonCandidates(value: string): string[] {
+  const trimmed = value.trim();
+  const candidates: string[] = [];
+
+  addCandidate(candidates, stripCodeFence(trimmed));
+
+  for (const fencedJson of readFencedJsonBlocks(trimmed)) {
+    addCandidate(candidates, fencedJson);
+  }
+
+  const objectCandidate = extractFirstJsonObject(trimmed);
+  if (objectCandidate) {
+    addCandidate(candidates, objectCandidate);
+  }
+
+  return candidates;
+}
+
+function addCandidate(candidates: string[], value: string): void {
+  const trimmed = value.trim();
+  if (trimmed && !candidates.includes(trimmed)) {
+    candidates.push(trimmed);
+  }
+}
+
+function readFencedJsonBlocks(value: string): string[] {
+  return Array.from(value.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi), (match) => match[1]?.trim() ?? "").filter(Boolean);
+}
+
+function extractFirstJsonObject(value: string): string | undefined {
+  const start = value.indexOf("{");
+  if (start < 0) {
+    return undefined;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < value.length; index += 1) {
+    const char = value[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+
+    if (char === "{") {
+      depth += 1;
+      continue;
+    }
+
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return value.slice(start, index + 1).trim();
+      }
+    }
+  }
+
+  return undefined;
 }
 
 function normalizeExampleQuestion(value: unknown): unknown {
