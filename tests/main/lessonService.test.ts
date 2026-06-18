@@ -249,6 +249,44 @@ describe("generateLessonPlan", () => {
     });
   });
 
+  it("fills omitted lesson detail sections from available model content", async () => {
+    const {
+      markdown: _markdown,
+      lesson_flow: _lessonFlow,
+      example_questions: _exampleQuestions,
+      worked_solutions: _workedSolutions,
+      classroom_questions: _classroomQuestions,
+      homework_suggestions: _homeworkSuggestions,
+      ...modelLesson
+    } = completeLessonPlan();
+    const fakeClient = {
+      chatCompletion: vi.fn(async () => JSON.stringify(modelLesson))
+    };
+
+    await expect(
+      generateLessonPlan({
+        topic: "一元一次方程",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({
+      lesson_flow: [
+        { title: "导入与诊断", minutes: 5, activities: expect.arrayContaining(["围绕一元一次方程提出情境问题，检查学生已有经验"]) },
+        { title: "重点讲解", minutes: 15, activities: expect.arrayContaining(["聚焦方程的解，板书核心方法并配合例题说明"]) },
+        { title: "练习与小结", minutes: 10, activities: expect.arrayContaining(["学生独立完成变式练习，教师追问易错点并总结方法"]) }
+      ],
+      example_questions: [{ question: "围绕一元一次方程设计一道基础例题。", answer: "需教师结合班级情况补充答案" }],
+      worked_solutions: [{
+        question: "围绕一元一次方程设计一道基础例题。",
+        steps: expect.arrayContaining(["读题并圈出已知量与未知量", "根据等量关系列式或说明理由"]),
+        answer: "需教师结合班级情况补充答案"
+      }],
+      classroom_questions: expect.arrayContaining(["方程的解中最容易出错的一步是什么？"]),
+      homework_suggestions: expect.arrayContaining(["完成 3 道与一元一次方程相关的基础练习，并标出关键步骤"]),
+      markdown: expect.stringContaining("## 示例解法")
+    });
+  });
+
   it("normalizes example questions that the model returns as strings", async () => {
     const { markdown: _markdown, ...baseLesson } = completeLessonPlan();
     const modelLesson = {

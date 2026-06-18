@@ -210,15 +210,79 @@ function normalizeLessonPlanObject(value: unknown): unknown {
   }
 
   const normalized: Record<string, unknown> = { ...value };
+  if (isMissing(normalized.lesson_flow)) {
+    normalized.lesson_flow = readLessonAlias(value, ["教学流程", "lessonFlow", "flow", "teaching_flow", "teaching_process"])
+      ?? createFallbackLessonFlow(value);
+  }
   if (normalized.board_design === undefined) {
     normalized.board_design = readBoardDesignAlias(value) ?? createFallbackBoardDesign(value);
+  }
+  if (isMissing(normalized.example_questions)) {
+    normalized.example_questions = readLessonAlias(value, ["示例题目", "例题", "examples", "exampleQuestions"])
+      ?? createFallbackExampleQuestions(value);
+  }
+  if (isMissing(normalized.worked_solutions)) {
+    normalized.worked_solutions = readLessonAlias(value, ["示例解法", "例题解法", "solutions", "workedSolutions", "worked_examples"])
+      ?? createFallbackWorkedSolutions(value);
+  }
+  if (isMissing(normalized.classroom_questions)) {
+    normalized.classroom_questions = readLessonAlias(value, ["课堂提问", "classroomQuestions", "questions"])
+      ?? createFallbackClassroomQuestions(value);
+  }
+  if (isMissing(normalized.homework_suggestions)) {
+    normalized.homework_suggestions = readLessonAlias(value, ["作业建议", "homework", "homeworkSuggestions"])
+      ?? createFallbackHomeworkSuggestions(value);
   }
 
   return normalized;
 }
 
+function isMissing(value: unknown): boolean {
+  return value === undefined || value === null;
+}
+
+function readLessonAlias(value: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    if (!isMissing(value[key])) {
+      return value[key];
+    }
+  }
+
+  return undefined;
+}
+
 function readBoardDesignAlias(value: Record<string, unknown>): unknown {
   return value["板书设计"] ?? value.blackboard_design ?? value.blackboardDesign ?? value.boardDesign;
+}
+
+function createFallbackLessonFlow(value: Record<string, unknown>): Array<{ title: string; minutes: number; activities: string[] }> {
+  const title = readString(value.title) ?? "本课";
+  const keyPoint = readStringItems(value.key_points)[0] ?? "核心概念";
+  const difficultPoint = readStringItems(value.difficult_points)[0] ?? "关键难点";
+
+  return [
+    {
+      title: "导入与诊断",
+      minutes: 5,
+      activities: [
+        `围绕${title}提出情境问题，检查学生已有经验`,
+        `请学生说出对${keyPoint}的初步理解`
+      ]
+    },
+    {
+      title: "重点讲解",
+      minutes: 15,
+      activities: [
+        `聚焦${keyPoint}，板书核心方法并配合例题说明`,
+        `针对${difficultPoint}进行分步示范`
+      ]
+    },
+    {
+      title: "练习与小结",
+      minutes: 10,
+      activities: ["学生独立完成变式练习，教师追问易错点并总结方法"]
+    }
+  ];
 }
 
 function createFallbackBoardDesign(value: Record<string, unknown>): string[] {
@@ -244,6 +308,51 @@ function createFallbackBoardDesign(value: Record<string, unknown>): string[] {
   return items.length > 0
     ? items
     : ["课题：待完善", "重点：梳理核心概念", "例题：选择典型题目讲解", "小结：回顾方法与易错点"];
+}
+
+function createFallbackExampleQuestions(value: Record<string, unknown>): Array<{ question: string; answer: string }> {
+  return [{
+    question: createFallbackQuestion(value),
+    answer: "需教师结合班级情况补充答案"
+  }];
+}
+
+function createFallbackWorkedSolutions(value: Record<string, unknown>): Array<{ question: string; steps: string[]; answer: string }> {
+  return [{
+    question: createFallbackQuestion(value),
+    steps: [
+      "读题并圈出已知量与未知量",
+      "根据等量关系列式或说明理由",
+      "计算或推理后回到原题检验"
+    ],
+    answer: "需教师结合班级情况补充答案"
+  }];
+}
+
+function createFallbackClassroomQuestions(value: Record<string, unknown>): string[] {
+  const keyPoint = readStringItems(value.key_points)[0] ?? "核心概念";
+  const difficultPoint = readStringItems(value.difficult_points)[0] ?? "关键难点";
+
+  return [
+    `${keyPoint}中最容易出错的一步是什么？`,
+    `遇到${difficultPoint}时，可以先找哪些已知条件？`,
+    "你能用自己的话复述今天的方法吗？"
+  ];
+}
+
+function createFallbackHomeworkSuggestions(value: Record<string, unknown>): string[] {
+  const title = readString(value.title) ?? "本课内容";
+
+  return [
+    `完成 3 道与${title}相关的基础练习，并标出关键步骤`,
+    "整理 1 个易错点，写出错误原因和改正方法"
+  ];
+}
+
+function createFallbackQuestion(value: Record<string, unknown>): string {
+  return readFirstQuestion(value.worked_solutions)
+    ?? readFirstQuestion(value.example_questions)
+    ?? `围绕${readString(value.title) ?? "本课内容"}设计一道基础例题。`;
 }
 
 function readStringItems(value: unknown): string[] {
