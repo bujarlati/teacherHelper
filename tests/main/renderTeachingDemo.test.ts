@@ -52,6 +52,29 @@ describe("renderTeachingDemoHtml", () => {
     expect(html).toContain("再从 A 的终点继续移动 B。");
   });
 
+  test("renders an executable arithmetic interaction for four-operation topics", () => {
+    const html = renderTeachingDemoHtml({
+      title: "四则运算综合复习",
+      prompt: "复习整数四则运算、混合运算和运算顺序",
+      script: "同学们好，今天我们来复习四则运算。\n先判断先算哪一步。\n再按顺序完成计算。"
+    });
+    const dom = new JSDOM(html, { runScripts: "dangerously" });
+    const document = dom.window.document;
+
+    expect(document.querySelector(".interactive-courseware")?.getAttribute("data-template")).toBe("arithmetic");
+    expect(document.querySelector("#arithmetic-expression")?.textContent).toContain("18 ÷ 3 + 4 × 2");
+
+    document.querySelector<HTMLButtonElement>("#arithmetic-next")?.click();
+    expect(document.querySelector("#arithmetic-expression")?.textContent).toContain("6 + 4 × 2");
+    expect(document.querySelector("#arithmetic-rule")?.textContent).toContain("先算除法");
+
+    document.querySelector<HTMLButtonElement>("#arithmetic-next")?.click();
+    expect(document.querySelector("#arithmetic-expression")?.textContent).toContain("6 + 8");
+
+    document.querySelector<HTMLButtonElement>("#arithmetic-answer")?.click();
+    expect(document.querySelector("#arithmetic-result")?.textContent).toContain("14");
+  });
+
   test("generated controls execute in the browser document", () => {
     const html = renderTeachingDemoHtml({
       title: "一次函数复习",

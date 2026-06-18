@@ -6,7 +6,7 @@ type RenderTeachingDemoInput = {
   workedSolutions?: Array<{ question: string; steps: string[]; answer: string }>;
 };
 
-type CoursewareTemplate = "function" | "balance" | "number-line" | "generic";
+type CoursewareTemplate = "function" | "balance" | "number-line" | "arithmetic" | "generic";
 type InteractiveExample = {
   question: string;
   steps: string[];
@@ -426,6 +426,74 @@ export function renderTeachingDemoHtml(input: RenderTeachingDemoInput): string {
       text-align: center;
     }
 
+    .arithmetic-board {
+      width: min(720px, 100%);
+      display: grid;
+      gap: 18px;
+      justify-items: stretch;
+      align-content: center;
+    }
+
+    .arithmetic-expression {
+      min-height: 82px;
+      display: grid;
+      place-items: center;
+      border: 1px solid #cfd9e6;
+      border-radius: 8px;
+      background: #ffffff;
+      color: #182235;
+      font-size: 34px;
+      font-weight: 900;
+      text-align: center;
+      line-height: 1.25;
+    }
+
+    .operation-lane {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .operation-chip {
+      min-height: 74px;
+      display: grid;
+      place-items: center;
+      border: 1px solid #cfd9e6;
+      border-radius: 8px;
+      background: #f8fbff;
+      color: #4d5a6e;
+      font-weight: 800;
+      text-align: center;
+      transition: border-color 180ms ease, background 180ms ease, color 180ms ease, transform 180ms ease;
+    }
+
+    .operation-chip.is-active {
+      border-color: #2f78c4;
+      background: #e8f2fd;
+      color: #1f5d9b;
+      transform: translateY(-2px);
+    }
+
+    .operation-chip.is-done {
+      border-color: #87b58f;
+      background: #eef8f0;
+      color: #1d6b48;
+    }
+
+    .arithmetic-rule,
+    .arithmetic-result {
+      min-height: 36px;
+      color: #263247;
+      font-size: 18px;
+      font-weight: 800;
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    .arithmetic-result {
+      color: #1d6b48;
+    }
+
     @media (max-width: 900px) {
       body {
         padding: 12px;
@@ -651,20 +719,61 @@ export function renderTeachingDemoHtml(input: RenderTeachingDemoInput): string {
       if (marker) marker.style.left = percent(total) + "%";
     }
 
+    function updateArithmetic() {
+      const phase = Number(document.getElementById("arithmetic-phase")?.value || 0);
+      const expression = document.getElementById("arithmetic-expression");
+      const rule = document.getElementById("arithmetic-rule");
+      const result = document.getElementById("arithmetic-result");
+      const chips = Array.from(document.querySelectorAll("[data-operation-step]"));
+      const states = [
+        {
+          expression: "18 ÷ 3 + 4 × 2",
+          rule: "先观察：同级运算按顺序，乘除优先于加减。",
+          result: ""
+        },
+        {
+          expression: "6 + 4 × 2",
+          rule: "第 1 步：先算除法 18 ÷ 3 = 6。",
+          result: ""
+        },
+        {
+          expression: "6 + 8",
+          rule: "第 2 步：再算乘法 4 × 2 = 8。",
+          result: ""
+        },
+        {
+          expression: "14",
+          rule: "第 3 步：最后算加法 6 + 8 = 14。",
+          result: "结果：14"
+        }
+      ];
+      const state = states[Math.max(0, Math.min(phase, states.length - 1))];
+      if (expression) expression.textContent = state.expression;
+      if (rule) rule.textContent = state.rule;
+      if (result) result.textContent = state.result;
+      chips.forEach((chip, index) => {
+        chip.classList.toggle("is-active", index === phase - 1);
+        chip.classList.toggle("is-done", phase > index + 1);
+      });
+    }
+
     function resetTemplate() {
       const slope = document.getElementById("slope-slider");
       const intercept = document.getElementById("intercept-slider");
       const phase = document.getElementById("balance-phase");
       const first = document.getElementById("first-jump");
       const second = document.getElementById("second-jump");
+      const arithmeticPhase = document.getElementById("arithmetic-phase");
       if (slope) slope.value = "1";
       if (intercept) intercept.value = "0";
       if (phase) phase.value = "0";
       if (first) first.value = "3";
       if (second) second.value = "2";
+      if (arithmeticPhase) arithmeticPhase.value = "0";
       updateFunctionPlot();
       updateBalance();
       updateNumberLine();
+      updateArithmetic();
       const feedback = document.getElementById("feedback");
       if (feedback) feedback.textContent = "";
     }
@@ -684,6 +793,22 @@ export function renderTeachingDemoHtml(input: RenderTeachingDemoInput): string {
     });
     document.getElementById("first-jump")?.addEventListener("input", updateNumberLine);
     document.getElementById("second-jump")?.addEventListener("input", updateNumberLine);
+    document.getElementById("arithmetic-phase")?.addEventListener("input", updateArithmetic);
+    document.getElementById("arithmetic-first")?.addEventListener("click", () => {
+      const phase = document.getElementById("arithmetic-phase");
+      if (phase) phase.value = "1";
+      updateArithmetic();
+    });
+    document.getElementById("arithmetic-next")?.addEventListener("click", () => {
+      const phase = document.getElementById("arithmetic-phase");
+      if (phase) phase.value = String(Math.min(Number(phase.value || 0) + 1, 3));
+      updateArithmetic();
+    });
+    document.getElementById("arithmetic-answer")?.addEventListener("click", () => {
+      const phase = document.getElementById("arithmetic-phase");
+      if (phase) phase.value = "3";
+      updateArithmetic();
+    });
 
     showStep(0);
     resetTemplate();
@@ -749,6 +874,21 @@ function renderTemplate(template: CoursewareTemplate): string {
           </div>`;
   }
 
+  if (template === "arithmetic") {
+    return `<div class="visual-panel" aria-label="四则运算互动">
+            <div class="arithmetic-board">
+              <div id="arithmetic-expression" class="arithmetic-expression">18 ÷ 3 + 4 × 2</div>
+              <div class="operation-lane" aria-label="运算步骤">
+                <div class="operation-chip" data-operation-step="1">① 先算除法<br />18 ÷ 3</div>
+                <div class="operation-chip" data-operation-step="2">② 再算乘法<br />4 × 2</div>
+                <div class="operation-chip" data-operation-step="3">③ 最后加法<br />6 + 8</div>
+              </div>
+              <div id="arithmetic-rule" class="arithmetic-rule">先观察：同级运算按顺序，乘除优先于加减。</div>
+              <div id="arithmetic-result" class="arithmetic-result" role="status"></div>
+            </div>
+          </div>`;
+  }
+
   return `<div class="visual-panel" aria-label="通用互动板书">
             <div class="balance-board">
               <p class="step-text">按步骤推进，先让学生判断，再揭示结论。</p>
@@ -788,6 +928,18 @@ function renderTemplateControls(template: CoursewareTemplate): string {
             <div class="control-row">
               <label for="second-jump">第二段 B <span id="second-jump-value">2</span></label>
               <input id="second-jump" type="range" min="0" max="5" step="1" value="2" />
+            </div>`;
+  }
+
+  if (template === "arithmetic") {
+    return `<div class="control-row">
+              <label for="arithmetic-phase">运算推进 <span>观察 → 除法 → 乘法 → 加法</span></label>
+              <input id="arithmetic-phase" type="range" min="0" max="3" step="1" value="0" />
+            </div>
+            <div class="toolbar">
+              <button id="arithmetic-first" type="button">判断第一步</button>
+              <button id="arithmetic-next" type="button">执行一步</button>
+              <button id="arithmetic-answer" type="button">显示结果</button>
             </div>`;
   }
 
@@ -836,6 +988,11 @@ function renderQuizOptions(template: CoursewareTemplate): string {
             <button class="quiz-option" type="button" data-correct="false">两段都从 0 开始走</button>`;
   }
 
+  if (template === "arithmetic") {
+    return `<button class="quiz-option" type="button" data-correct="true">先算 18 ÷ 3 和 4 × 2</button>
+            <button class="quiz-option" type="button" data-correct="false">先从左到右直接算加法</button>`;
+  }
+
   return `<button class="quiz-option" type="button" data-correct="true">先观察，再解释理由</button>
           <button class="quiz-option" type="button" data-correct="false">直接给出答案即可</button>`;
 }
@@ -845,6 +1002,7 @@ function chooseTemplate(value: string): CoursewareTemplate {
   if (/一次函数|函数|y\s*=|kx|slope|intercept|坐标/.test(text)) return "function";
   if (/方程|天平|等式|balance|equation|x\s*[+\-*/=]/.test(text)) return "balance";
   if (/数轴|number line|a\s*\+\s*b|跳跃|有理数/.test(text)) return "number-line";
+  if (/四则运算|混合运算|运算顺序|加减乘除|先乘除|整数运算|小数运算|分数运算|括号/.test(text)) return "arithmetic";
   return "generic";
 }
 
@@ -852,6 +1010,7 @@ function createTeacherNote(template: CoursewareTemplate): string {
   if (template === "function") return "先让学生拖动 k 和 b，描述图像怎样变化，再追问哪个参数控制倾斜、哪个参数控制截距。";
   if (template === "balance") return "强调等式两边必须做同样操作。每一步操作前先问学生：天平会不会继续平衡？";
   if (template === "number-line") return "让学生先预测终点，再拖动 A 和 B 验证。重点追问第二段为什么从第一段终点出发。";
+  if (template === "arithmetic") return "先让学生判断第一步算什么，再点击执行一步。重点追问：为什么乘除要先算，最后才做加减？";
   return "把每一步变成提问：先预测、再操作、最后解释理由。";
 }
 
@@ -859,6 +1018,7 @@ function createQuizQuestion(template: CoursewareTemplate): string {
   if (template === "function") return "拖动后你能判断 k 的作用吗？";
   if (template === "balance") return "哪种操作能保持等式成立？";
   if (template === "number-line") return "A+B 的第二段应该从哪里开始？";
+  if (template === "arithmetic") return "这道混合运算应该先算哪一类？";
   return "这一页最适合先问学生什么？";
 }
 

@@ -49,3 +49,33 @@ test("generated teaching courseware has working controls and no raw English prom
     await rm(rootDir, { recursive: true, force: true });
   }
 });
+
+test("generated arithmetic courseware updates the main visual stage", async ({ page }) => {
+  const rootDir = await mkdtemp(join(tmpdir(), "teacherhelper-arithmetic-courseware-"));
+  const html = renderTeachingDemoHtml({
+    title: "四则运算综合复习",
+    prompt: "复习整数四则运算、混合运算和运算顺序",
+    script: "同学们好，今天我们来复习四则运算。\n先判断先算哪一步。\n再按顺序完成计算。"
+  });
+  await writeFile(join(rootDir, "index.html"), html, "utf8");
+  const server = await startDemoServer(rootDir);
+
+  try {
+    await page.goto(server.url);
+
+    await expect(page.locator(".interactive-courseware")).toHaveAttribute("data-template", "arithmetic");
+    await expect(page.locator("#arithmetic-expression")).toContainText("18 ÷ 3 + 4 × 2");
+
+    await page.locator("#arithmetic-first").click();
+    await expect(page.locator("#arithmetic-rule")).toContainText("先算除法");
+
+    await page.locator("#arithmetic-next").click();
+    await expect(page.locator("#arithmetic-expression")).toContainText("6 + 8");
+
+    await page.locator("#arithmetic-answer").click();
+    await expect(page.locator("#arithmetic-result")).toContainText("14");
+  } finally {
+    await server.close();
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
