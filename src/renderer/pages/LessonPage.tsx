@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import type { ReactElement } from "react";
-import type { LessonPlan, LocalTeachingDemoResult, VideoTask } from "../../shared/types";
+import type { LessonImageAsset, LessonPlan, LocalTeachingDemoResult, VideoTask } from "../../shared/types";
 import { api } from "../api";
 
 type StatusTone = "muted" | "success" | "error";
@@ -15,6 +15,8 @@ type LessonResult = {
   lesson: LessonPlan;
   videoTask?: VideoTask;
   videoError?: string;
+  imageAssets?: LessonImageAsset[];
+  imageError?: string;
   localDemo?: LocalTeachingDemoResult;
   demoError?: string;
 };
@@ -70,7 +72,7 @@ export function LessonPage(): ReactElement {
       const nextResult = await api.generateLesson(trimmedTopic);
       setResult(nextResult);
       setStatus({
-        tone: nextResult.videoError || nextResult.demoError ? "error" : "success",
+        tone: hasLessonGenerateWarning(nextResult) ? "error" : "success",
         text: getLessonGenerateStatus(nextResult)
       });
     } catch (error) {
@@ -101,7 +103,7 @@ export function LessonPage(): ReactElement {
       setResult(nextResult);
       setLessonFeedback("");
       setStatus({
-        tone: nextResult.videoError || nextResult.demoError ? "error" : "success",
+        tone: hasLessonGenerateWarning(nextResult) ? "error" : "success",
         text: getLessonGenerateStatus(nextResult)
       });
     } catch (error) {
@@ -225,6 +227,23 @@ export function LessonPage(): ReactElement {
         </section>
       ) : null}
 
+      {result?.imageAssets?.length ? (
+        <section className="result-section" aria-labelledby="lesson-images-title">
+          <h2 id="lesson-images-title">课堂图片</h2>
+          <div className="lesson-image-grid">
+            {result.imageAssets.map((asset, index) => (
+              <figure className="lesson-image-card" key={`${asset.title}-${index}`}>
+                <img src={asset.src} alt={asset.title} />
+                <figcaption>
+                  <strong>{asset.title}</strong>
+                  <span>{asset.prompt}</span>
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {result ? (
         <section className="result-section" aria-labelledby="lesson-result-title">
           <h2 id="lesson-result-title">{result.lesson.title}</h2>
@@ -254,12 +273,22 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+function hasLessonGenerateWarning(result: LessonResult): boolean {
+  return Boolean(result.videoError || result.demoError || result.imageError);
+}
+
 function getLessonGenerateStatus(result: LessonResult): string {
+  if (result.localDemo && result.imageError) {
+    return `教案已生成，本地教学演示已打开；图片生成失败：${result.imageError}`;
+  }
   if (result.localDemo) {
     return "教案已生成，本地教学演示已打开。";
   }
   if (result.demoError) {
     return `教案已生成，本地教学演示生成失败：${result.demoError}`;
+  }
+  if (result.imageError) {
+    return `教案已生成，图片生成失败：${result.imageError}`;
   }
   if (result.videoTask) {
     return `视频任务已提交：${result.videoTask.status}`;

@@ -130,6 +130,49 @@ describe("createSiliconFlowClient", () => {
     );
   });
 
+  it("creates images with POST JSON bearer auth", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        images: [{ url: "https://cdn.example.test/lesson-image.png" }],
+        timings: { inference: 1234 },
+        seed: 42
+      })
+    );
+    const client = createSiliconFlowClient({
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      baseUrl: "https://example.test/v1"
+    });
+
+    await expect(client.createImage({
+      apiKey: "key",
+      modelName: "Tongyi-MAI/Z-Image",
+      prompt: "课堂插图：用数轴理解 A+B",
+      imageSize: "1024x1024",
+      negativePrompt: "blurry"
+    })).resolves.toEqual({
+      imageUrl: "https://cdn.example.test/lesson-image.png",
+      seed: 42,
+      inferenceMs: 1234
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://example.test/v1/images/generations",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "Content-Type": "application/json",
+          Authorization: "Bearer key"
+        }),
+        body: JSON.stringify({
+          model: "Tongyi-MAI/Z-Image",
+          prompt: "课堂插图：用数轴理解 A+B",
+          image_size: "1024x1024",
+          negative_prompt: "blurry"
+        })
+      })
+    );
+  });
+
   it("creates embeddings with POST JSON bearer auth", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({
@@ -205,6 +248,17 @@ describe("createSiliconFlowClient", () => {
     await expect(
       client.createEmbedding({ apiKey: "key", modelName: "Qwen/Qwen3-VL-Embedding-8B", input: "hello" })
     ).rejects.toThrow("SiliconFlow returned invalid embedding response");
+  });
+
+  it("rejects invalid image generation responses", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ images: [] }));
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(client.createImage({
+      apiKey: "key",
+      modelName: "Tongyi-MAI/Z-Image",
+      prompt: "lesson image"
+    })).rejects.toThrow("SiliconFlow returned invalid image generation response");
   });
 
   it("creates rerank requests with multimodal documents", async () => {

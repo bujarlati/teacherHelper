@@ -104,6 +104,7 @@ function createBaseDeps(overrides: Record<string, unknown> = {}) {
 const completeSettings: AppSettings = {
   textModel: { apiKey: "text-key", modelName: "text-model" },
   videoModel: { apiKey: "video-key", modelName: "video-model" },
+  imageModel: { apiKey: "image-key", modelName: "Tongyi-MAI/Z-Image" },
   embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
   rerankerModel: { apiKey: "rerank-key", modelName: "Qwen/Qwen3-VL-Reranker-8B" },
   qdrant: { mode: "local", url: "http://127.0.0.1:6333", apiKey: "", collectionPrefix: "teacherhelper" }
@@ -265,6 +266,74 @@ describe("registerWorkflowIpcHandlers", () => {
       createdAt: "2026-06-15T01:02:03.000Z"
     }]);
     expect(upsertVideo).not.toHaveBeenCalled();
+  });
+
+  it("generates lesson image assets and injects them into the local teaching demo", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const imageAssets = [{
+      title: "故事导入图",
+      prompt: "数轴小路",
+      src: "data:image/png;base64,AQID"
+    }];
+    const generateLessonImages = vi.fn().mockResolvedValue(imageAssets);
+    const renderTeachingDemoHtml = vi.fn().mockReturnValue("<!doctype html><title>lesson images</title>");
+    const deps = createBaseDeps({
+      createId: () => "lesson-1",
+      generateLessonPlan: vi.fn().mockResolvedValue(lesson),
+      generateLessonImages,
+      renderTeachingDemoHtml,
+      startDemoServer: vi.fn().mockResolvedValue({ url: "http://127.0.0.1:8123/", close: vi.fn() })
+    });
+
+    registerWorkflowIpcHandlers(fakeIpcMain, deps);
+
+    await expect(fakeIpcMain.handlers.get("lesson:generate")?.({}, " 一次函数 ")).resolves.toMatchObject({
+      id: "lesson-1",
+      imageAssets,
+      localDemo: {
+        id: "lesson-1",
+        title: lesson.title,
+        url: "http://127.0.0.1:8123/"
+      }
+    });
+    expect(generateLessonImages).toHaveBeenCalledWith({
+      lesson,
+      lessonId: "lesson-1",
+      config: completeSettings.imageModel,
+      client: deps.client,
+      dataDir: tmpDir
+    });
+    expect(renderTeachingDemoHtml).toHaveBeenCalledWith(expect.objectContaining({
+      imageAssets
+    }));
+  });
+
+  it("keeps the lesson and local demo when lesson image generation fails", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const renderTeachingDemoHtml = vi.fn().mockReturnValue("<!doctype html><title>lesson without images</title>");
+    const deps = createBaseDeps({
+      createId: () => "lesson-1",
+      generateLessonPlan: vi.fn().mockResolvedValue(lesson),
+      generateLessonImages: vi.fn().mockRejectedValue(new Error("image generation failed")),
+      renderTeachingDemoHtml,
+      startDemoServer: vi.fn().mockResolvedValue({ url: "http://127.0.0.1:8123/", close: vi.fn() })
+    });
+
+    registerWorkflowIpcHandlers(fakeIpcMain, deps);
+
+    await expect(fakeIpcMain.handlers.get("lesson:generate")?.({}, " 一次函数 ")).resolves.toEqual({
+      id: "lesson-1",
+      lesson,
+      localDemo: {
+        id: "lesson-1",
+        title: lesson.title,
+        url: "http://127.0.0.1:8123/"
+      },
+      imageError: "image generation failed"
+    });
+    expect(renderTeachingDemoHtml).toHaveBeenCalledWith(expect.not.objectContaining({
+      imageAssets: expect.anything()
+    }));
   });
 
   it("generates a standalone video task and saves it to history", async () => {

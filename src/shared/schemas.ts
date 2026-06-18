@@ -7,6 +7,7 @@ export const modelConfigSchema = z.object({
 
 export const defaultEmbeddingModelName = "Qwen/Qwen3-VL-Embedding-8B";
 export const defaultRerankerModelName = "Qwen/Qwen3-VL-Reranker-8B";
+export const defaultImageModelName = "Tongyi-MAI/Z-Image";
 export const defaultQdrantUrl = "http://127.0.0.1:6333";
 export const defaultQdrantCollectionPrefix = "teacherhelper";
 
@@ -20,6 +21,10 @@ export const qdrantConfigSchema = z.object({
 export const appSettingsSchema = z.object({
   textModel: modelConfigSchema,
   videoModel: modelConfigSchema,
+  imageModel: modelConfigSchema.default({
+    apiKey: "",
+    modelName: defaultImageModelName
+  }),
   embeddingModel: modelConfigSchema.default({
     apiKey: "",
     modelName: defaultEmbeddingModelName

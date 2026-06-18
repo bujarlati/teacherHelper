@@ -12,6 +12,10 @@ const storedSettings: AppSettings = {
     apiKey: "video-key",
     modelName: "Wan-AI/Wan2.2-T2V-A14B"
   },
+  imageModel: {
+    apiKey: "image-key",
+    modelName: "Tongyi-MAI/Z-Image"
+  },
   embeddingModel: {
     apiKey: "embedding-key",
     modelName: "Qwen/Qwen3-VL-Embedding-8B"
@@ -64,6 +68,8 @@ describe("SettingsPage", () => {
     expect(screen.getByDisplayValue("deepseek-ai/DeepSeek-V3")).toBeTruthy();
     expect(screen.getByDisplayValue("video-key")).toBeTruthy();
     expect(screen.getByDisplayValue("Wan-AI/Wan2.2-T2V-A14B")).toBeTruthy();
+    expect(screen.getByDisplayValue("image-key")).toBeTruthy();
+    expect(screen.getByDisplayValue("Tongyi-MAI/Z-Image")).toBeTruthy();
     expect(screen.getByDisplayValue("embedding-key")).toBeTruthy();
     expect(screen.getByDisplayValue("Qwen/Qwen3-VL-Embedding-8B")).toBeTruthy();
     expect(screen.getByDisplayValue("rerank-key")).toBeTruthy();
@@ -72,6 +78,7 @@ describe("SettingsPage", () => {
     expect(screen.getByText("本地向量库运行中")).toBeTruthy();
     expect(screen.getByLabelText("文本 API Key")).toHaveProperty("type", "password");
     expect(screen.getByLabelText("视频 API Key")).toHaveProperty("type", "password");
+    expect(screen.getByLabelText("图片 API Key")).toHaveProperty("type", "password");
     expect(screen.getByLabelText("嵌入 API Key")).toHaveProperty("type", "password");
     expect(screen.getByLabelText("重排序 API Key")).toHaveProperty("type", "password");
     expect(screen.getByLabelText("Qdrant API Key")).toHaveProperty("type", "password");
@@ -82,6 +89,9 @@ describe("SettingsPage", () => {
     });
     fireEvent.change(screen.getByLabelText("视频模型名"), {
       target: { value: "updated-video-model" }
+    });
+    fireEvent.change(screen.getByLabelText("图片模型名"), {
+      target: { value: "updated-image-model" }
     });
     fireEvent.change(screen.getByLabelText("重排序模型名"), {
       target: { value: "updated-reranker-model" }
@@ -100,6 +110,10 @@ describe("SettingsPage", () => {
         videoModel: {
           apiKey: "video-key",
           modelName: "updated-video-model"
+        },
+        imageModel: {
+          apiKey: "image-key",
+          modelName: "updated-image-model"
         },
         embeddingModel: {
           apiKey: "embedding-key",
@@ -128,6 +142,8 @@ describe("SettingsPage", () => {
     expect(screen.getByLabelText("文本模型名")).toHaveProperty("value", "");
     expect(screen.getByLabelText("视频 API Key")).toHaveProperty("value", "");
     expect(screen.getByLabelText("视频模型名")).toHaveProperty("value", "");
+    expect(screen.getByLabelText("图片 API Key")).toHaveProperty("value", "");
+    expect(screen.getByLabelText("图片模型名")).toHaveProperty("value", "Tongyi-MAI/Z-Image");
     expect(screen.getByLabelText("嵌入 API Key")).toHaveProperty("value", "");
     expect(screen.getByLabelText("嵌入模型名")).toHaveProperty("value", "Qwen/Qwen3-VL-Embedding-8B");
     expect(screen.getByLabelText("重排序 API Key")).toHaveProperty("value", "");

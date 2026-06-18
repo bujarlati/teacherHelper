@@ -1,9 +1,12 @@
+import type { LessonImageAsset } from "../../shared/types.js";
+
 type RenderTeachingDemoInput = {
   title: string;
   prompt: string;
   script?: string;
   exampleQuestions?: Array<{ question: string; answer: string }>;
   workedSolutions?: Array<{ question: string; steps: string[]; answer: string }>;
+  imageAssets?: LessonImageAsset[];
 };
 
 type CoursewareTemplate = "function" | "balance" | "number-line" | "arithmetic" | "generic";
@@ -18,6 +21,7 @@ export function renderTeachingDemoHtml(input: RenderTeachingDemoInput): string {
   const prompt = input.prompt.trim();
   const template = chooseTemplate(`${title}\n${prompt}\n${input.script || ""}`);
   const interactiveExamples = createInteractiveExamples(input);
+  const imageAssets = normalizeImageAssets(input.imageAssets ?? []);
   const scriptSteps = splitScriptIntoSteps(input.script || input.prompt);
   const steps = createCoursewareSteps({
     title,
@@ -217,6 +221,47 @@ export function renderTeachingDemoHtml(input: RenderTeachingDemoInput): string {
       border: 1px solid #d9e0ea;
       border-radius: 8px;
       background: #fbfcfe;
+    }
+
+    .image-gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .image-card {
+      overflow: hidden;
+      display: grid;
+      border: 1px solid #d9e0ea;
+      border-radius: 8px;
+      background: #ffffff;
+    }
+
+    .image-card img {
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      object-fit: cover;
+      display: block;
+      background: #edf2f7;
+    }
+
+    .image-caption {
+      display: grid;
+      gap: 4px;
+      padding: 10px 12px;
+    }
+
+    .image-caption strong {
+      color: #182235;
+      font-size: 15px;
+      line-height: 1.35;
+    }
+
+    .image-caption p {
+      margin: 0;
+      color: #4d5a6e;
+      font-size: 13px;
+      line-height: 1.45;
     }
 
     .example-lab h2 {
@@ -539,6 +584,7 @@ export function renderTeachingDemoHtml(input: RenderTeachingDemoInput): string {
         <div id="step-list">
           ${steps.map((step, index) => renderStep(step, index)).join("\n          ")}
         </div>
+        ${renderImageGallery(imageAssets)}
         ${renderTemplate(template)}
         <div class="controls">
           ${renderTemplateControls(template)}
@@ -1017,6 +1063,26 @@ function renderTemplateControls(template: CoursewareTemplate): string {
   return `<button class="action-button" type="button" onclick="document.getElementById('feedback').textContent='先让学生回答，再点击下一步。'">生成课堂追问</button>`;
 }
 
+function renderImageGallery(assets: LessonImageAsset[]): string {
+  if (assets.length === 0) {
+    return "";
+  }
+
+  return `<section class="image-gallery" aria-label="课堂图片素材" data-image-gallery>
+          ${assets.map((asset) => renderImageCard(asset)).join("\n          ")}
+        </section>`;
+}
+
+function renderImageCard(asset: LessonImageAsset): string {
+  return `<article class="image-card">
+              <img src="${escapeHtmlAttribute(asset.src)}" alt="${escapeHtmlAttribute(asset.title)}" loading="lazy" />
+              <div class="image-caption">
+                <strong>${escapeHtml(asset.title)}</strong>
+                <p data-image-prompt>${escapeHtml(asset.prompt)}</p>
+              </div>
+            </article>`;
+}
+
 function renderInteractiveExamples(examples: InteractiveExample[]): string {
   if (examples.length === 0) {
     return "";
@@ -1143,6 +1209,18 @@ function createInteractiveExamples(input: RenderTeachingDemoInput): InteractiveE
     .filter((item): item is InteractiveExample => Boolean(item));
 
   return [...examplesFromWorkedSolutions, ...examplesFromQuestions].slice(0, 4);
+}
+
+function normalizeImageAssets(assets: LessonImageAsset[]): LessonImageAsset[] {
+  return assets
+    .map((asset) => ({
+      ...asset,
+      title: asset.title.trim(),
+      prompt: asset.prompt.trim(),
+      src: asset.src.trim()
+    }))
+    .filter((asset) => asset.title && asset.prompt && asset.src)
+    .slice(0, 3);
 }
 
 function normalizeInteractiveExample(value: InteractiveExample): InteractiveExample | undefined {

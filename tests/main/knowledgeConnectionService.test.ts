@@ -5,6 +5,7 @@ import type { AppSettings } from "../../src/shared/types";
 const settings: AppSettings = {
   textModel: { apiKey: "text-key", modelName: "text-model" },
   videoModel: { apiKey: "video-key", modelName: "video-model" },
+  imageModel: { apiKey: "image-key", modelName: "Tongyi-MAI/Z-Image" },
   embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
   rerankerModel: { apiKey: "rerank-key", modelName: "Qwen/Qwen3-VL-Reranker-8B" },
   qdrant: { mode: "remote", url: "https://cluster.example.qdrant.io", apiKey: "qdrant-key", collectionPrefix: "teacherhelper" }

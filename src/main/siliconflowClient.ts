@@ -63,6 +63,24 @@ type RerankInput = {
   instruction?: string;
 };
 
+type ImageGenerationInput = {
+  apiKey: string;
+  modelName: string;
+  prompt: string;
+  imageSize?: string;
+  negativePrompt?: string;
+  seed?: number;
+  batchSize?: number;
+  numInferenceSteps?: number;
+  guidanceScale?: number;
+};
+
+type ImageGenerationResult = {
+  imageUrl: string;
+  seed?: number;
+  inferenceMs?: number;
+};
+
 type VideoStatusResult = {
   status: VideoTaskStatus;
   reason?: string;
@@ -237,6 +255,37 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
       return results;
     },
 
+    async createImage(input: ImageGenerationInput): Promise<ImageGenerationResult> {
+      const body: Record<string, JsonValue | undefined> = {
+        model: input.modelName,
+        prompt: input.prompt,
+        image_size: input.imageSize ?? "1024x1024",
+        negative_prompt: input.negativePrompt,
+        seed: input.seed,
+        batch_size: input.batchSize,
+        num_inference_steps: input.numInferenceSteps,
+        guidance_scale: input.guidanceScale
+      };
+
+      const data = await requestJson("/images/generations", input.apiKey, {
+        method: "POST",
+        body: JSON.stringify(body)
+      });
+
+      const imageUrl = readString(data, ["images", 0, "url"]);
+      if (!imageUrl) {
+        throw new Error("SiliconFlow returned invalid image generation response");
+      }
+
+      const result: ImageGenerationResult = { imageUrl };
+      const seed = readNumber(data, ["seed"]);
+      const inferenceMs = readNumber(data, ["timings", "inference"]);
+      if (seed !== undefined) result.seed = seed;
+      if (inferenceMs !== undefined) result.inferenceMs = inferenceMs;
+
+      return result;
+    },
+
     async listModels(input: { apiKey: string; type?: "text" | "video" }): Promise<Array<{ id: string }>> {
       const query = input.type ? `?type=${encodeURIComponent(input.type)}` : "";
       const data = await requestJson(`/models${query}`, input.apiKey, {
@@ -367,6 +416,23 @@ function readString(value: unknown, path: Array<string | number>): string | unde
   }
 
   return typeof current === "string" ? current : undefined;
+}
+
+function readNumber(value: unknown, path: Array<string | number>): number | undefined {
+  let current: unknown = value;
+
+  for (const segment of path) {
+    if (typeof segment === "number") {
+      if (!Array.isArray(current)) return undefined;
+      current = current[segment];
+      continue;
+    }
+
+    if (!isRecord(current)) return undefined;
+    current = current[segment];
+  }
+
+  return typeof current === "number" ? current : undefined;
 }
 
 function readNumberArray(value: unknown, path: Array<string | number>): number[] | undefined {

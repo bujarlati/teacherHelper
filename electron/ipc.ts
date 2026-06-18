@@ -10,6 +10,7 @@ import { renderSimpleDemoHtml } from "../src/main/demo/renderSimpleDemo.js";
 import { renderTeachingDemoHtml } from "../src/main/demo/renderTeachingDemo.js";
 import { createHistoryStore } from "../src/main/historyStore.js";
 import { testKnowledgeConnections } from "../src/main/knowledgeConnectionService.js";
+import { generateLessonImages } from "../src/main/lessonImageService.js";
 import { generateLessonPlan } from "../src/main/lessonService.js";
 import { createLocalQdrantManager } from "../src/main/localQdrantManager.js";
 import { getAppDataDir } from "../src/main/paths.js";
@@ -53,6 +54,7 @@ export function registerIpcHandlers(): void {
     now: () => new Date().toISOString(),
     testKnowledgeConnections,
     generateLessonPlan,
+    generateLessonImages,
     createVideoTaskFromLesson,
     createStandaloneVideoTask,
     refreshVideoTaskStatus,

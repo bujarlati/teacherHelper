@@ -5,6 +5,7 @@ import { lessonPlanSchema } from "../src/shared/schemas.js";
 import type {
   AppSettings,
   KnowledgeConnectionTestResult,
+  LessonImageAsset,
   LessonPlan,
   LocalTeachingDemoInput,
   LocalTeachingDemoResult,
@@ -82,6 +83,13 @@ type WorkflowDeps = {
     qdrantClient: QdrantClientLike;
   }): Promise<KnowledgeConnectionTestResult>;
   generateLessonPlan(input: { topic: string; config: AppSettings["textModel"]; client: unknown }): Promise<LessonPlan>;
+  generateLessonImages?(input: {
+    lesson: LessonPlan;
+    lessonId: string;
+    config: AppSettings["imageModel"];
+    client: unknown;
+    dataDir: string;
+  }): Promise<LessonImageAsset[]>;
   createVideoTaskFromLesson(input: {
     lessonId: string;
     lesson: LessonPlan;
@@ -165,6 +173,12 @@ const localTeachingDemoInputSchema = z.object({
     question: nonEmptyStringSchema,
     steps: z.array(nonEmptyStringSchema),
     answer: nonEmptyStringSchema
+  })).optional(),
+  imageAssets: z.array(z.object({
+    title: nonEmptyStringSchema,
+    prompt: nonEmptyStringSchema,
+    src: nonEmptyStringSchema,
+    localPath: nonEmptyStringSchema.optional()
   })).optional()
 });
 const exportLessonInputSchema = z.object({
@@ -223,6 +237,22 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
       createdAt
     });
 
+    let imageAssets: LessonImageAsset[] = [];
+    let imageError: string | undefined;
+    if (deps.generateLessonImages) {
+      try {
+        imageAssets = await deps.generateLessonImages({
+          lesson,
+          lessonId: id,
+          config: settings.imageModel,
+          client: deps.client,
+          dataDir: deps.dataDir
+        });
+      } catch (error) {
+        imageError = getErrorMessage(error);
+      }
+    }
+
     let localDemo: LocalTeachingDemoResult | undefined;
     let demoError: string | undefined;
     try {
@@ -230,7 +260,8 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
         prompt: lesson.video_prompt,
         script: lesson.video_script,
         exampleQuestions: lesson.example_questions,
-        workedSolutions: lesson.worked_solutions
+        workedSolutions: lesson.worked_solutions,
+        ...(imageAssets.length > 0 ? { imageAssets } : {})
       }, deps, activeDemoServer, {
         id,
         title: lesson.title,
@@ -242,7 +273,14 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
       demoError = getErrorMessage(error);
     }
 
-    return { id, lesson, localDemo, demoError };
+    return {
+      id,
+      lesson,
+      ...(imageAssets.length > 0 ? { imageAssets } : {}),
+      ...(imageError ? { imageError } : {}),
+      ...(localDemo ? { localDemo } : {}),
+      ...(demoError ? { demoError } : {})
+    };
   });
 
   ipcMainLike.handle("lesson:exportDocx", async (_event, input) => {
@@ -531,7 +569,8 @@ async function generateLocalTeachingDemo(
     prompt: parsed.prompt,
     script: parsed.script,
     ...(parsed.exampleQuestions ? { exampleQuestions: parsed.exampleQuestions } : {}),
-    ...(parsed.workedSolutions ? { workedSolutions: parsed.workedSolutions } : {})
+    ...(parsed.workedSolutions ? { workedSolutions: parsed.workedSolutions } : {}),
+    ...(parsed.imageAssets ? { imageAssets: parsed.imageAssets } : {})
   });
   const demoDir = join(deps.dataDir, "local-demos", id);
 

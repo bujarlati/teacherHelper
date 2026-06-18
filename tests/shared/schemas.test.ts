@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   appSettingsSchema,
+  defaultImageModelName,
   defaultRerankerModelName,
   lessonPlanSchema,
   modelConfigSchema,
@@ -131,10 +132,11 @@ describe("modelConfigSchema", () => {
 });
 
 describe("appSettingsSchema", () => {
-  it("accepts text, video, embedding, and qdrant setting groups", () => {
+  it("accepts text, video, image, embedding, and qdrant setting groups", () => {
     const parsed = appSettingsSchema.parse({
       textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
       videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
+      imageModel: { apiKey: "image-key", modelName: "Tongyi-MAI/Z-Image" },
       embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
       qdrant: {
         mode: "remote",
@@ -145,6 +147,7 @@ describe("appSettingsSchema", () => {
     });
 
     expect(parsed.videoModel.apiKey).toBe("video-key");
+    expect(parsed.imageModel.modelName).toBe(defaultImageModelName);
     expect(parsed.embeddingModel.modelName).toBe("Qwen/Qwen3-VL-Embedding-8B");
     expect(parsed.rerankerModel.modelName).toBe(defaultRerankerModelName);
     expect(parsed.qdrant.mode).toBe("remote");
@@ -162,6 +165,10 @@ describe("appSettingsSchema", () => {
       apiKey: "",
       modelName: "Qwen/Qwen3-VL-Embedding-8B"
     });
+    expect(parsed.imageModel).toEqual({
+      apiKey: "",
+      modelName: defaultImageModelName
+    });
     expect(parsed.rerankerModel).toEqual({
       apiKey: "",
       modelName: defaultRerankerModelName
@@ -178,6 +185,7 @@ describe("appSettingsSchema", () => {
     const parsed = appSettingsSchema.parse({
       textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
       videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
+      imageModel: { apiKey: "image-key", modelName: "Tongyi-MAI/Z-Image" },
       embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
       qdrant: { url: "http://localhost:6333", apiKey: "", collectionPrefix: "teacherhelper" }
     });
@@ -194,6 +202,7 @@ describe("appSettingsSchema", () => {
     const parsed = appSettingsSchema.parse({
       textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
       videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
+      imageModel: { apiKey: "image-key", modelName: "Tongyi-MAI/Z-Image" },
       embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
       rerankerModel: { apiKey: "rerank-key", modelName: "Qwen/Qwen3-VL-Reranker-8B" }
     });

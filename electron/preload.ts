@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   AppSettings,
   KnowledgeConnectionTestResult,
+  LessonImageAsset,
   LessonPlan,
   LocalTeachingDemoInput,
   LocalTeachingDemoResult,
@@ -34,6 +35,8 @@ export type TeacherHelperApi = {
     lesson: LessonPlan;
     videoTask?: VideoTask;
     videoError?: string;
+    imageAssets?: LessonImageAsset[];
+    imageError?: string;
     localDemo?: LocalTeachingDemoResult;
     demoError?: string;
   }>;
@@ -60,6 +63,8 @@ const teacherHelperApi: TeacherHelperApi = {
     lesson: LessonPlan;
     videoTask?: VideoTask;
     videoError?: string;
+    imageAssets?: LessonImageAsset[];
+    imageError?: string;
     localDemo?: LocalTeachingDemoResult;
     demoError?: string;
   }>,

@@ -2,6 +2,7 @@ import type { DemoRecord, LessonRecord, VideoRecord } from "../main/historyStore
 import type {
   AppSettings,
   KnowledgeConnectionTestResult,
+  LessonImageAsset,
   LessonPlan,
   LocalTeachingDemoInput,
   LocalTeachingDemoResult,
@@ -19,6 +20,8 @@ export type LessonGenerateResult = {
   lesson: LessonPlan;
   videoTask?: VideoTask;
   videoError?: string;
+  imageAssets?: LessonImageAsset[];
+  imageError?: string;
   localDemo?: LocalTeachingDemoResult;
   demoError?: string;
 };

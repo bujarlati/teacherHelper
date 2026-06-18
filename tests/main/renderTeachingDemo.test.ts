@@ -93,6 +93,26 @@ describe("renderTeachingDemoHtml", () => {
     expect(cards.some((card) => card.textContent?.includes("例题迁移"))).toBe(true);
   });
 
+  test("renders generated lesson images as courseware visual cards", () => {
+    const html = renderTeachingDemoHtml({
+      title: "A+B 的数轴意义",
+      prompt: "在数轴上演示 A+B 的连续合并。",
+      script: "先观察情境。\n再操作数轴。",
+      imageAssets: [{
+        title: "故事导入图",
+        prompt: "小朋友沿着数轴小路先走 A 再走 B",
+        src: "data:image/png;base64,AQID"
+      }]
+    });
+    const dom = new JSDOM(html);
+    const document = dom.window.document;
+
+    expect(document.querySelector("[data-image-gallery]")).toBeTruthy();
+    expect(document.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,AQID");
+    expect(document.querySelector("img")?.getAttribute("alt")).toBe("故事导入图");
+    expect(document.querySelector("[data-image-prompt]")?.textContent).toContain("数轴小路");
+  });
+
   test("generated controls execute in the browser document", () => {
     const html = renderTeachingDemoHtml({
       title: "一次函数复习",
@@ -162,13 +182,22 @@ describe("renderTeachingDemoHtml", () => {
     const html = renderTeachingDemoHtml({
       title: "<script>alert(1)</script>",
       prompt: "Compare 1 < 2 and 3 > 2.",
-      script: "Use \"labels\" and don't run <img src=x onerror=alert(1)>."
+      script: "Use \"labels\" and don't run <img src=x onerror=alert(1)>.",
+      imageAssets: [{
+        title: "\"bad\" <script>alert(2)</script>",
+        prompt: "unsafe <img src=x onerror=alert(3)>",
+        src: "data:image/png;base64,AQID"
+      }]
     });
 
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
     expect(html).not.toContain("Compare 1 &lt; 2 and 3 &gt; 2.");
     expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+    expect(html).toContain("&quot;bad&quot; &lt;script&gt;alert(2)&lt;/script&gt;");
+    expect(html).toContain("unsafe &lt;img src=x onerror=alert(3)&gt;");
     expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).not.toContain("<script>alert(2)</script>");
     expect(html).not.toContain("<img src=x onerror=alert(1)>");
+    expect(html).not.toContain("<img src=x onerror=alert(3)>");
   });
 });

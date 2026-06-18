@@ -24,6 +24,7 @@ export type LocalQdrantStatus = {
 export type AppSettings = {
   textModel: ModelConfig;
   videoModel: ModelConfig;
+  imageModel: ModelConfig;
   embeddingModel: ModelConfig;
   rerankerModel: ModelConfig;
   qdrant: QdrantConfig;
@@ -91,11 +92,19 @@ export type VideoGenerateInput = {
   negativePrompt?: string;
 };
 
+export type LessonImageAsset = {
+  title: string;
+  prompt: string;
+  src: string;
+  localPath?: string;
+};
+
 export type LocalTeachingDemoInput = {
   prompt: string;
   script?: string;
   exampleQuestions?: Array<{ question: string; answer: string }>;
   workedSolutions?: Array<{ question: string; steps: string[]; answer: string }>;
+  imageAssets?: LessonImageAsset[];
 };
 
 export type LocalTeachingDemoResult = {

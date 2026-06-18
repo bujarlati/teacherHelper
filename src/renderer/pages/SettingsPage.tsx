@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import type { ReactElement } from "react";
 import {
   defaultEmbeddingModelName,
+  defaultImageModelName,
   defaultQdrantCollectionPrefix,
   defaultQdrantUrl,
   defaultRerankerModelName
@@ -18,6 +19,10 @@ function createEmptySettings(): AppSettings {
     videoModel: {
       apiKey: "",
       modelName: ""
+    },
+    imageModel: {
+      apiKey: "",
+      modelName: defaultImageModelName
     },
     embeddingModel: {
       apiKey: "",
@@ -200,6 +205,35 @@ export function SettingsPage(): ReactElement {
               onChange={(event) => setSettings({
                 ...settings,
                 videoModel: { ...settings.videoModel, modelName: event.target.value }
+              })}
+            />
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>图片模型</legend>
+          <label>
+            <span>图片 API Key</span>
+            <input
+              type="password"
+              autoComplete="off"
+              disabled={controlsDisabled}
+              value={settings.imageModel.apiKey}
+              onChange={(event) => setSettings({
+                ...settings,
+                imageModel: { ...settings.imageModel, apiKey: event.target.value }
+              })}
+            />
+          </label>
+          <label>
+            <span>图片模型名</span>
+            <input
+              autoComplete="off"
+              disabled={controlsDisabled}
+              value={settings.imageModel.modelName}
+              onChange={(event) => setSettings({
+                ...settings,
+                imageModel: { ...settings.imageModel, modelName: event.target.value }
               })}
             />
           </label>

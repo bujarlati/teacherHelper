@@ -418,6 +418,46 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.lesson-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.lesson-image-card {
+  overflow: hidden;
+  display: grid;
+  margin: 0;
+  border: 1px solid #d2d9d5;
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.lesson-image-card img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  display: block;
+  background: #eef1ed;
+}
+
+.lesson-image-card figcaption {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.lesson-image-card strong {
+  color: #1f2d2b;
+  font-size: 15px;
+}
+
+.lesson-image-card span {
+  color: #53615d;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .history-grid {
   display: grid;
   gap: 24px;
