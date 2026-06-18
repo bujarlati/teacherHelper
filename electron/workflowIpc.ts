@@ -233,7 +233,8 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
         workedSolutions: lesson.worked_solutions
       }, deps, activeDemoServer, {
         id,
-        title: lesson.title
+        title: lesson.title,
+        historyProblem: lesson.video_prompt
       });
       activeDemoServer = demoResult.activeDemoServer;
       localDemo = demoResult.response;
@@ -270,6 +271,24 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
     activeDemoServer = result.activeDemoServer;
 
     return result.response;
+  });
+
+  ipcMainLike.handle("demo:open", async (_event, demoIdInput) => {
+    const queuedDemo = demoQueue.then(
+      () => openSavedDemo(demoIdInput, deps, activeDemoServer),
+      () => openSavedDemo(demoIdInput, deps, activeDemoServer)
+    );
+
+    demoQueue = queuedDemo
+      .then((result) => {
+        activeDemoServer = result.activeDemoServer;
+      })
+      .catch(() => undefined);
+
+    const result = await queuedDemo;
+    activeDemoServer = result.activeDemoServer;
+
+    return result.url;
   });
 
   ipcMainLike.handle("video:generate", async (_event, input) => {
@@ -464,11 +483,45 @@ async function generateDemo(
   }
 }
 
+async function openSavedDemo(
+  demoIdInput: unknown,
+  deps: WorkflowDeps,
+  activeDemoServer: DemoServer | undefined
+): Promise<{ url: string; activeDemoServer: DemoServer }> {
+  const demoId = nonEmptyStringSchema.parse(demoIdInput);
+  const demos = await deps.historyStore.listDemos();
+  const demo = demos.find((item) => item.id === demoId);
+  if (!demo) {
+    throw new Error("未找到演示记录。");
+  }
+
+  let newDemoServer: DemoServer | undefined;
+  try {
+    newDemoServer = await deps.startDemoServer(demo.demoPath);
+    const url = newDemoServer.url;
+    await deps.openExternal(url);
+
+    const promotedDemoServer = newDemoServer;
+    newDemoServer = undefined;
+    if (activeDemoServer) {
+      await closeDemoServerQuietly(activeDemoServer);
+    }
+
+    return { url, activeDemoServer: promotedDemoServer };
+  } catch (error) {
+    if (newDemoServer) {
+      await newDemoServer.close();
+    }
+
+    throw error;
+  }
+}
+
 async function generateLocalTeachingDemo(
   input: unknown,
   deps: WorkflowDeps,
   activeDemoServer: DemoServer | undefined,
-  options: { id?: string; title?: string } = {}
+  options: { id?: string; title?: string; historyProblem?: string } = {}
 ): Promise<{ response: LocalTeachingDemoResult; activeDemoServer: DemoServer }> {
   const parsed = localTeachingDemoInputSchema.parse(input);
   const id = options.id ?? deps.createId();
@@ -490,6 +543,14 @@ async function generateLocalTeachingDemo(
     newDemoServer = await deps.startDemoServer(demoDir);
     const url = newDemoServer.url;
     await deps.openExternal(url);
+    await deps.historyStore.addDemo({
+      id,
+      title,
+      problem: options.historyProblem ?? createLocalDemoHistoryProblem(parsed.prompt, parsed.script),
+      kind: "simple",
+      demoPath: demoDir,
+      createdAt: deps.now()
+    });
 
     const promotedDemoServer = newDemoServer;
     newDemoServer = undefined;
@@ -537,6 +598,14 @@ function safeFileName(value: string): string {
 function createLocalDemoTitle(prompt: string): string {
   const compact = prompt.replace(/\s+/g, " ").trim();
   return compact.slice(0, 80) || "本地教学演示";
+}
+
+function createLocalDemoHistoryProblem(prompt: string, script?: string): string {
+  if (!script) {
+    return prompt;
+  }
+
+  return `${prompt}\n\n脚本：${script}`;
 }
 
 function getErrorMessage(error: unknown): string {

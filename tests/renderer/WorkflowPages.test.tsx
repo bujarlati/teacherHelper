@@ -100,6 +100,7 @@ describe("workflow pages", () => {
           url: "http://127.0.0.1:8123/"
         }),
         generateDemo: vi.fn().mockResolvedValue({ id: "demo-1", plan: demoPlan, url: "http://127.0.0.1:4321/" }),
+        openDemo: vi.fn().mockResolvedValue("http://127.0.0.1:4321/"),
         refreshVideo: vi.fn(),
         listHistory: vi.fn()
       }
@@ -168,6 +169,45 @@ describe("workflow pages", () => {
     expect(screen.getByText("教案已生成，本地教学演示生成失败：local preview failed")).toBeTruthy();
   });
 
+  test("LessonPage refines an existing lesson with the current markdown context", async () => {
+    const updatedLesson: LessonPlan = {
+      ...lesson,
+      title: "一次函数复习（生活情境版）",
+      markdown: "# 一次函数复习（生活情境版）\n\n加入打车计费情境。"
+    };
+    window.teacherHelper.generateLesson = vi.fn()
+      .mockResolvedValueOnce({ id: "lesson-1", lesson })
+      .mockResolvedValueOnce({
+        id: "lesson-2",
+        lesson: updatedLesson,
+        localDemo: {
+          id: "lesson-2",
+          title: updatedLesson.title,
+          url: "http://127.0.0.1:8124/"
+        }
+      });
+    const { LessonPage } = await import("../../src/renderer/pages/LessonPage");
+
+    render(<LessonPage />);
+
+    fireEvent.change(screen.getByLabelText("课题"), { target: { value: "一次函数" } });
+    fireEvent.click(screen.getByRole("button", { name: "生成教案" }));
+    expect(await screen.findByText("# 一次函数复习", { exact: false })).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("教案修改要求"), { target: { value: "加入生活案例，降低难度" } });
+    fireEvent.click(screen.getByRole("button", { name: "根据要求修改教案" }));
+
+    await waitFor(() => {
+      expect(window.teacherHelper.generateLesson).toHaveBeenCalledTimes(2);
+    });
+    const refineTopic = vi.mocked(window.teacherHelper.generateLesson).mock.calls[1][0];
+    expect(refineTopic).toContain("请基于以下已有教案进行二次修改");
+    expect(refineTopic).toContain("原始课题：一次函数");
+    expect(refineTopic).toContain("加入生活案例，降低难度");
+    expect(refineTopic).toContain(lesson.markdown);
+    expect(await screen.findByText("# 一次函数复习（生活情境版）", { exact: false })).toBeTruthy();
+  });
+
   test("LessonPage shows progress, elapsed time, and slow-generation guidance while generating", async () => {
     vi.useFakeTimers();
     window.teacherHelper.generateLesson = vi.fn().mockReturnValue(new Promise(() => undefined));
@@ -224,6 +264,37 @@ describe("workflow pages", () => {
     expect(screen.getByText("演示已生成并打开。")).toBeTruthy();
   });
 
+  test("DemoPage refines an existing demo with the current plan context", async () => {
+    const updatedPlan: ProblemDemoPlan = {
+      ...demoPlan,
+      title: "工程题演示（慢速讲解）",
+      steps: ["先画效率条", "再合并效率", "最后求时间"]
+    };
+    window.teacherHelper.generateDemo = vi.fn()
+      .mockResolvedValueOnce({ id: "demo-1", plan: demoPlan, url: "http://127.0.0.1:4321/" })
+      .mockResolvedValueOnce({ id: "demo-2", plan: updatedPlan, url: "http://127.0.0.1:4322/" });
+    const { DemoPage } = await import("../../src/renderer/pages/DemoPage");
+
+    render(<DemoPage />);
+
+    fireEvent.change(screen.getByLabelText("题目"), { target: { value: "甲乙合作。" } });
+    fireEvent.click(screen.getByRole("button", { name: "生成演示" }));
+    expect(await screen.findByText("工程题演示")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("演示修改要求"), { target: { value: "改成慢速讲解，突出效率条" } });
+    fireEvent.click(screen.getByRole("button", { name: "根据要求修改演示" }));
+
+    await waitFor(() => {
+      expect(window.teacherHelper.generateDemo).toHaveBeenCalledTimes(2);
+    });
+    const refinedProblem = vi.mocked(window.teacherHelper.generateDemo).mock.calls[1][0];
+    expect(refinedProblem).toContain("请基于以下已有课堂演示进行二次修改");
+    expect(refinedProblem).toContain("原始题目：甲乙合作。");
+    expect(refinedProblem).toContain("改成慢速讲解，突出效率条");
+    expect(refinedProblem).toContain("相加效率");
+    expect(await screen.findByText("工程题演示（慢速讲解）")).toBeTruthy();
+  });
+
   test("App exposes the standalone video generation page", async () => {
     const { App } = await import("../../src/renderer/App");
 
@@ -266,6 +337,33 @@ describe("workflow pages", () => {
     expect(await screen.findByRole("heading", { name: "结果图片预览" })).toBeTruthy();
     expect(screen.getByRole("img", { name: /放大预览：七年级数学/ })).toBeTruthy();
     expect(screen.getAllByText("D:\\teacherHelper-data\\textbooks\\book-1\\pages\\page-002.png").length).toBeGreaterThan(0);
+  });
+
+  test("TextbookPage refines a search using the current result context", async () => {
+    window.teacherHelper.searchTextbooks = vi.fn()
+      .mockResolvedValueOnce([textbookSearchResult])
+      .mockResolvedValueOnce([{ ...textbookSearchResult, id: "point-2", pageNumber: 3, score: 0.95 }]);
+    const { TextbookPage } = await import("../../src/renderer/pages/TextbookPage");
+
+    render(<TextbookPage />);
+
+    expect(await screen.findByText("七年级数学")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("教材检索问题"), { target: { value: "一次函数图像" } });
+    fireEvent.click(screen.getByRole("button", { name: "检索教材" }));
+    expect(await screen.findByText("第 2 页 · page · 相似度 0.91 · 重排 0.97")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("教材检索修改要求"), { target: { value: "只看含坐标系图形的页面" } });
+    fireEvent.click(screen.getByRole("button", { name: "根据要求继续检索" }));
+
+    await waitFor(() => {
+      expect(window.teacherHelper.searchTextbooks).toHaveBeenCalledTimes(2);
+    });
+    const refinedQuery = vi.mocked(window.teacherHelper.searchTextbooks).mock.calls[1][0].query;
+    expect(refinedQuery).toContain("请基于上一次教材检索结果继续检索");
+    expect(refinedQuery).toContain("原问题：一次函数图像");
+    expect(refinedQuery).toContain("只看含坐标系图形的页面");
+    expect(refinedQuery).toContain("七年级数学");
+    expect(await screen.findByText("第 3 页 · page · 相似度 0.95 · 重排 0.97")).toBeTruthy();
   });
 
   test("TextbookPage shows a readable fallback when a search result image is unavailable", async () => {
@@ -425,6 +523,41 @@ describe("workflow pages", () => {
     expect(screen.getByRole("link", { name: "打开本地演示" }).getAttribute("href")).toBe("http://127.0.0.1:8123/");
   });
 
+  test("VideoPage refines a local teaching demo with the current prompt and script context", async () => {
+    window.teacherHelper.generateLocalTeachingDemo = vi.fn()
+      .mockResolvedValueOnce({
+        id: "local-demo-1",
+        title: "A stable local teaching demo",
+        url: "http://127.0.0.1:8123/"
+      })
+      .mockResolvedValueOnce({
+        id: "local-demo-2",
+        title: "A slower local teaching demo",
+        url: "http://127.0.0.1:8124/"
+      });
+    const { VideoPage } = await import("../../src/renderer/pages/VideoPage");
+
+    render(<VideoPage />);
+
+    fireEvent.change(screen.getByLabelText("提示词"), { target: { value: "A number line animation." } });
+    fireEvent.change(screen.getByLabelText("脚本/分镜"), { target: { value: "Show A then B." } });
+    fireEvent.click(screen.getByRole("button", { name: "生成本地演示" }));
+    expect(await screen.findByText("A stable local teaching demo")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("视频修改要求"), { target: { value: "放慢节奏，并加入停顿提问" } });
+    fireEvent.click(screen.getByRole("button", { name: "根据要求修改本地演示" }));
+
+    await waitFor(() => {
+      expect(window.teacherHelper.generateLocalTeachingDemo).toHaveBeenCalledTimes(2);
+    });
+    const refinedInput = vi.mocked(window.teacherHelper.generateLocalTeachingDemo).mock.calls[1][0];
+    expect(refinedInput.prompt).toContain("请基于以下已有视频/本地演示方案进行二次修改");
+    expect(refinedInput.prompt).toContain("A number line animation.");
+    expect(refinedInput.prompt).toContain("放慢节奏，并加入停顿提问");
+    expect(refinedInput.script).toContain("Show A then B.");
+    expect(await screen.findByText("A slower local teaching demo")).toBeTruthy();
+  });
+
   test("HistoryPage lists lesson, demo, and video records", async () => {
     const lessons: LessonRecord[] = [{
       id: "lesson-1",
@@ -463,6 +596,30 @@ describe("workflow pages", () => {
     expect(screen.getByText("类型：simple")).toBeTruthy();
     expect(screen.getByText("视频任务 video-1")).toBeTruthy();
     expect(screen.getByText("状态：InQueue")).toBeTruthy();
+  });
+
+  test("HistoryPage opens a saved HTML demo", async () => {
+    const demos: DemoRecord[] = [{
+      id: "demo-1",
+      title: "工程题演示",
+      problem: "甲乙合作。",
+      kind: "simple",
+      demoPath: "D:\\demos\\demo-1",
+      createdAt: "2026-06-15T02:03:04.000Z"
+    }];
+    window.teacherHelper.listHistory = vi.fn().mockResolvedValue({ lessons: [], demos, videos: [] });
+    window.teacherHelper.openDemo = vi.fn().mockResolvedValue("http://127.0.0.1:4321/");
+    const { HistoryPage } = await import("../../src/renderer/pages/HistoryPage");
+
+    render(<HistoryPage />);
+
+    expect(await screen.findByText("工程题演示")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "打开演示" }));
+
+    await waitFor(() => {
+      expect(window.teacherHelper.openDemo).toHaveBeenCalledWith("demo-1");
+    });
+    expect(await screen.findByText("演示已打开：http://127.0.0.1:4321/")).toBeTruthy();
   });
 
   test("HistoryPage opens a saved lesson and copies its markdown", async () => {

@@ -158,6 +158,7 @@ describe("registerWorkflowIpcHandlers", () => {
   it("generates a lesson, saves it, and opens a local teaching demo", async () => {
     const fakeIpcMain = createFakeIpcMain();
     const addedLessons: LessonRecord[] = [];
+    const addedDemos: DemoRecord[] = [];
     const upsertedVideos: VideoRecord[] = [];
     const createdAt = "2026-06-15T01:02:03.000Z";
     const createVideoTaskFromLesson = vi.fn();
@@ -168,7 +169,7 @@ describe("registerWorkflowIpcHandlers", () => {
       configStore: { load: vi.fn().mockResolvedValue(completeSettings) },
       historyStore: {
         addLesson: async (record) => { addedLessons.push(record); },
-        addDemo: vi.fn(),
+        addDemo: async (record) => { addedDemos.push(record); },
         upsertVideo: async (record) => { upsertedVideos.push(record); },
         listLessons: vi.fn(),
         listDemos: vi.fn(),
@@ -208,6 +209,14 @@ describe("registerWorkflowIpcHandlers", () => {
       title: lesson.title,
       topic: "一次函数",
       markdown: lesson.markdown,
+      createdAt
+    }]);
+    expect(addedDemos).toEqual([{
+      id: "lesson-1",
+      title: lesson.title,
+      problem: lesson.video_prompt,
+      kind: "simple",
+      demoPath: join(tmpDir, "local-demos", "lesson-1"),
       createdAt
     }]);
     expect(renderTeachingDemoHtml).toHaveBeenCalledWith({
@@ -310,8 +319,17 @@ describe("registerWorkflowIpcHandlers", () => {
     const fakeIpcMain = createFakeIpcMain();
     const renderTeachingDemoHtml = vi.fn().mockReturnValue("<!doctype html><title>local demo</title>");
     const createStandaloneVideoTask = vi.fn();
+    const addDemo = vi.fn().mockResolvedValue(undefined);
     const openExternal = vi.fn().mockResolvedValue(undefined);
     const deps = createBaseDeps({
+      historyStore: {
+        addLesson: vi.fn(),
+        addDemo,
+        upsertVideo: vi.fn(),
+        listLessons: vi.fn(),
+        listDemos: vi.fn(),
+        listVideos: vi.fn()
+      },
       createId: () => "local-demo-1",
       renderTeachingDemoHtml,
       createStandaloneVideoTask,
@@ -339,6 +357,14 @@ describe("registerWorkflowIpcHandlers", () => {
     });
     await expect(readFile(join(tmpDir, "local-demos", "local-demo-1", "index.html"), "utf8")).resolves.toContain("local demo");
     expect(openExternal).toHaveBeenCalledWith("http://127.0.0.1:8123/");
+    expect(addDemo).toHaveBeenCalledWith({
+      id: "local-demo-1",
+      title: "Show A + B on a number line.",
+      problem: "Show A + B on a number line.\n\n脚本：Draw A. Draw B.",
+      kind: "simple",
+      demoPath: join(tmpDir, "local-demos", "local-demo-1"),
+      createdAt: "2026-06-15T03:04:05.000Z"
+    });
     expect(createStandaloneVideoTask).not.toHaveBeenCalled();
   });
 
@@ -653,6 +679,41 @@ describe("registerWorkflowIpcHandlers", () => {
     });
 
     await expect(fakeIpcMain.handlers.get("history:list")?.({})).resolves.toEqual({ lessons, demos, videos });
+  });
+
+  it("opens a saved demo from history", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const demoPath = join(tmpDir, "demos", "demo-1");
+    const demos: DemoRecord[] = [{
+      id: "demo-1",
+      title: "D",
+      problem: "P",
+      kind: "simple",
+      demoPath,
+      createdAt: "2026-06-15"
+    }];
+    const startDemoServer = vi.fn().mockResolvedValue({
+      url: "http://127.0.0.1:4321/",
+      close: vi.fn()
+    });
+    const openExternal = vi.fn().mockResolvedValue(undefined);
+
+    registerWorkflowIpcHandlers(fakeIpcMain, createBaseDeps({
+      historyStore: {
+        addLesson: vi.fn(),
+        addDemo: vi.fn(),
+        upsertVideo: vi.fn(),
+        listLessons: vi.fn(),
+        listDemos: vi.fn().mockResolvedValue(demos),
+        listVideos: vi.fn()
+      },
+      startDemoServer,
+      openExternal
+    }));
+
+    await expect(fakeIpcMain.handlers.get("demo:open")?.({}, " demo-1 ")).resolves.toBe("http://127.0.0.1:4321/");
+    expect(startDemoServer).toHaveBeenCalledWith(demoPath);
+    expect(openExternal).toHaveBeenCalledWith("http://127.0.0.1:4321/");
   });
 
   it("refreshes a video task status and saves the updated record", async () => {

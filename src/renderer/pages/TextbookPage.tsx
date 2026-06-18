@@ -18,6 +18,7 @@ export function TextbookPage(): ReactElement {
   const [selectedSearchResult, setSelectedSearchResult] = useState<TextbookSearchResult | undefined>();
   const [title, setTitle] = useState("");
   const [query, setQuery] = useState("");
+  const [searchFeedback, setSearchFeedback] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [progress, setProgress] = useState<{ current: number; total: number; label: string } | undefined>();
   const [status, setStatus] = useState<StatusMessage>({ tone: "muted", text: "请选择一个或多个教材 PDF 建立本地教材库。" });
@@ -110,6 +111,35 @@ export function TextbookPage(): ReactElement {
       setStatus({ tone: "success", text: results.length > 0 ? "教材检索完成。" : "没有找到相关教材页。" });
     } catch (error) {
       setStatus({ tone: "error", text: getErrorMessage(error, "教材检索失败。") });
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleRefineSearch(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (searchResults.length === 0) return;
+
+    const feedback = searchFeedback.trim();
+    if (!feedback) {
+      setStatus({ tone: "error", text: "请先输入修改要求。" });
+      return;
+    }
+
+    setIsBusy(true);
+    setStatus({ tone: "muted", text: "正在根据修改要求继续检索..." });
+
+    try {
+      const results = await api.searchTextbooks({
+        query: createTextbookRefinementQuery(query, searchResults, feedback),
+        limit: 6
+      });
+      setSearchResults(results);
+      setSelectedSearchResult(undefined);
+      setSearchFeedback("");
+      setStatus({ tone: "success", text: results.length > 0 ? "教材检索已按修改要求更新。" : "没有找到相关教材页。" });
+    } catch (error) {
+      setStatus({ tone: "error", text: getErrorMessage(error, "继续检索失败。") });
     } finally {
       setIsBusy(false);
     }
@@ -245,6 +275,27 @@ export function TextbookPage(): ReactElement {
         </section>
       </div>
 
+      {searchResults.length > 0 ? (
+        <section className="result-section" aria-labelledby="textbook-refinement-title">
+          <h2 id="textbook-refinement-title">二次检索</h2>
+          <form className="refinement-form" onSubmit={(event) => void handleRefineSearch(event)}>
+            <label>
+              <span>教材检索修改要求</span>
+              <textarea
+                rows={3}
+                disabled={isBusy}
+                value={searchFeedback}
+                onChange={(event) => setSearchFeedback(event.target.value)}
+                placeholder="例如：只看含图形的页面、偏向例题、排除练习答案页"
+              />
+            </label>
+            <div className="form-actions">
+              <button type="submit" className="secondary-button" disabled={isBusy}>根据要求继续检索</button>
+            </div>
+          </form>
+        </section>
+      ) : null}
+
       {selectedSearchResult ? (
         <section className="result-section">
           <h2>结果图片预览</h2>
@@ -359,4 +410,22 @@ function formatSearchScore(item: TextbookSearchResult): string {
 
 function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function createTextbookRefinementQuery(
+  query: string,
+  results: TextbookSearchResult[],
+  feedback: string
+): string {
+  const resultSummary = results.slice(0, 5).map((item, index) => {
+    return `${index + 1}. ${item.title} ${formatSearchResultLocation(item)} ${item.kind} ${formatSearchScore(item)}`;
+  }).join("\n");
+
+  return [
+    "请基于上一次教材检索结果继续检索，优先满足补充要求。",
+    `原问题：${query.trim()}`,
+    `补充要求：${feedback}`,
+    "上一次教材检索结果：",
+    resultSummary
+  ].join("\n\n");
 }

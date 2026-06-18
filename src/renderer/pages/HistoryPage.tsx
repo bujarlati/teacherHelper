@@ -11,6 +11,7 @@ type StatusMessage = {
 };
 
 type LessonHistoryItem = HistoryListResult["lessons"][number];
+type DemoHistoryItem = HistoryListResult["demos"][number];
 type VideoHistoryItem = HistoryListResult["videos"][number];
 
 const videoAutoRefreshMs = 30_000;
@@ -21,6 +22,7 @@ export function HistoryPage(): ReactElement {
   const [history, setHistory] = useState<HistoryListResult | undefined>();
   const [status, setStatus] = useState<StatusMessage>({ tone: "muted", text: "正在读取历史记录..." });
   const [isLoading, setIsLoading] = useState(true);
+  const [openingDemoIds, setOpeningDemoIds] = useState<Set<string>>(() => new Set());
   const [refreshingVideoIds, setRefreshingVideoIds] = useState<Set<string>>(() => new Set());
   const [selectedLesson, setSelectedLesson] = useState<LessonHistoryItem | undefined>();
   const [isCopyingLesson, setIsCopyingLesson] = useState(false);
@@ -115,6 +117,24 @@ export function HistoryPage(): ReactElement {
     });
   }
 
+  async function handleOpenDemo(demo: DemoHistoryItem): Promise<void> {
+    setOpeningDemoIds((current) => new Set(current).add(demo.id));
+    setStatus({ tone: "muted", text: "正在打开历史演示..." });
+
+    try {
+      const url = await api.openDemo(demo.id);
+      setStatus({ tone: "success", text: `演示已打开：${url}` });
+    } catch (error) {
+      setStatus({ tone: "error", text: getErrorMessage(error, "打开历史演示失败。") });
+    } finally {
+      setOpeningDemoIds((current) => {
+        const next = new Set(current);
+        next.delete(demo.id);
+        return next;
+      });
+    }
+  }
+
   async function handleCopyLessonMarkdown(): Promise<void> {
     if (!selectedLesson?.markdown) return;
 
@@ -172,6 +192,16 @@ export function HistoryPage(): ReactElement {
                   <span>类型：{demo.kind}</span>
                   <span>{demo.problem}</span>
                   <span>{demo.demoPath}</span>
+                  <div className="record-actions">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={openingDemoIds.has(demo.id)}
+                      onClick={() => void handleOpenDemo(demo)}
+                    >
+                      打开演示
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>

@@ -54,6 +54,7 @@ export type TeacherHelperRendererApi = {
   generateVideo(input: VideoGenerateInput): Promise<VideoRecord>;
   generateLocalTeachingDemo(input: LocalTeachingDemoInput): Promise<LocalTeachingDemoResult>;
   generateDemo(problem: string): Promise<DemoGenerateResult>;
+  openDemo(demoId: string): Promise<string>;
   refreshVideo(videoId: string): Promise<VideoRecord>;
   listHistory(): Promise<HistoryListResult>;
 };
@@ -86,6 +87,7 @@ export const api: TeacherHelperRendererApi = {
   generateVideo: async (input) => getApi().generateVideo(input),
   generateLocalTeachingDemo: async (input) => getApi().generateLocalTeachingDemo(input),
   generateDemo: async (problem) => getApi().generateDemo(problem),
+  openDemo: async (demoId) => getApi().openDemo(demoId),
   refreshVideo: async (videoId) => getApi().refreshVideo(videoId),
   listHistory: async () => getApi().listHistory()
 };

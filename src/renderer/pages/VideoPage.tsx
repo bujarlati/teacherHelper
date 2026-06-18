@@ -24,6 +24,7 @@ export function VideoPage(): ReactElement {
   const [imageFile, setImageFile] = useState<File | undefined>();
   const [video, setVideo] = useState<VideoRecord | undefined>();
   const [localDemo, setLocalDemo] = useState<LocalTeachingDemoResult | undefined>();
+  const [videoFeedback, setVideoFeedback] = useState("");
   const [status, setStatus] = useState<StatusMessage>({ tone: "muted", text: "输入提示词后生成视频。" });
   const [isGenerating, setIsGenerating] = useState(false);
   const [isGeneratingLocalDemo, setIsGeneratingLocalDemo] = useState(false);
@@ -106,6 +107,77 @@ export function VideoPage(): ReactElement {
       setStatus({ tone: "success", text: "本地教学演示已生成并打开。" });
     } catch (error) {
       setStatus({ tone: "error", text: getErrorMessage(error, "生成本地教学演示失败。") });
+    } finally {
+      setIsGeneratingLocalDemo(false);
+    }
+  }
+
+  async function handleRefineVideo(): Promise<void> {
+    if (!video && !localDemo) return;
+
+    const feedback = videoFeedback.trim();
+    if (!feedback) {
+      setStatus({ tone: "error", text: "请先输入修改要求。" });
+      return;
+    }
+
+    setIsGenerating(true);
+    setStatus({ tone: "muted", text: "正在根据修改要求重新提交视频任务..." });
+
+    try {
+      const imageDataUrl = imageFile ? await readFileAsDataUrl(imageFile) : undefined;
+      const refinedInput = createVideoRefinementInput({
+        prompt,
+        script,
+        feedback,
+        video,
+        localDemo
+      });
+      const nextVideo = await api.generateVideo({
+        prompt: refinedInput.prompt,
+        script: refinedInput.script,
+        imageSize,
+        negativePrompt: negativePrompt.trim() || undefined,
+        imageDataUrl
+      });
+
+      setVideo(nextVideo);
+      setVideoFeedback("");
+      setStatus({ tone: "success", text: `视频任务已按修改要求提交：${nextVideo.status}` });
+    } catch (error) {
+      setStatus({ tone: "error", text: getErrorMessage(error, "修改视频失败，请检查设置后重试。") });
+    } finally {
+      setIsGenerating(false);
+    }
+  }
+
+  async function handleRefineLocalDemo(): Promise<void> {
+    if (!video && !localDemo) return;
+
+    const feedback = videoFeedback.trim();
+    if (!feedback) {
+      setStatus({ tone: "error", text: "请先输入修改要求。" });
+      return;
+    }
+
+    setIsGeneratingLocalDemo(true);
+    setStatus({ tone: "muted", text: "正在根据修改要求更新本地演示..." });
+
+    try {
+      const refinedInput = createVideoRefinementInput({
+        prompt,
+        script,
+        feedback,
+        video,
+        localDemo
+      });
+      const nextDemo = await api.generateLocalTeachingDemo(refinedInput);
+
+      setLocalDemo(nextDemo);
+      setVideoFeedback("");
+      setStatus({ tone: "success", text: "本地教学演示已按修改要求生成并打开。" });
+    } catch (error) {
+      setStatus({ tone: "error", text: getErrorMessage(error, "修改本地教学演示失败。") });
     } finally {
       setIsGeneratingLocalDemo(false);
     }
@@ -204,6 +276,42 @@ export function VideoPage(): ReactElement {
       </form>
 
       {imageFile ? <p className="path-output">参考图片：{imageFile.name}</p> : null}
+
+      {video || localDemo ? (
+        <section className="result-section" aria-labelledby="video-refinement-title">
+          <h2 id="video-refinement-title">二次修改</h2>
+          <form className="refinement-form">
+            <label>
+              <span>视频修改要求</span>
+              <textarea
+                rows={3}
+                disabled={isBusy}
+                value={videoFeedback}
+                onChange={(event) => setVideoFeedback(event.target.value)}
+                placeholder="例如：放慢节奏、加入停顿提问、改成竖屏、突出关键公式"
+              />
+            </label>
+            <div className="form-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={isBusy}
+                onClick={() => void handleRefineVideo()}
+              >
+                根据要求重新生成视频
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={isBusy}
+                onClick={() => void handleRefineLocalDemo()}
+              >
+                根据要求修改本地演示
+              </button>
+            </div>
+          </form>
+        </section>
+      ) : null}
 
       {localDemo ? (
         <section className="result-section" aria-labelledby="local-demo-result-title">
@@ -361,4 +469,35 @@ function toFileUrl(filePath: string): string {
     .join("/");
 
   return `${prefix}${encoded}`;
+}
+
+function createVideoRefinementInput(input: {
+  prompt: string;
+  script: string;
+  feedback: string;
+  video?: VideoRecord;
+  localDemo?: LocalTeachingDemoResult;
+}): { prompt: string; script: string } {
+  const currentScript = input.script.trim();
+  const currentPrompt = input.prompt.trim();
+  const videoContext = input.video
+    ? `当前视频任务：${input.video.id}，状态：${input.video.status}，请求：${input.video.requestId}`
+    : "当前视频任务：暂无";
+  const localDemoContext = input.localDemo
+    ? `当前本地演示：${input.localDemo.title}，地址：${input.localDemo.url}`
+    : "当前本地演示：暂无";
+
+  return {
+    prompt: [
+      "请基于以下已有视频/本地演示方案进行二次修改，并输出更符合修改要求的新方案。",
+      `原提示词：${currentPrompt}`,
+      `原脚本/分镜：${currentScript || "暂无"}`,
+      videoContext,
+      localDemoContext,
+      `修改要求：${input.feedback}`
+    ].join("\n\n"),
+    script: currentScript
+      ? `${currentScript}\n\n二次修改要求：${input.feedback}`
+      : `二次修改要求：${input.feedback}`
+  };
 }

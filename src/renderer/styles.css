@@ -288,6 +288,19 @@ textarea:focus {
   margin-bottom: 22px;
 }
 
+.refinement-form {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #d2d9d5;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfcfa;
+}
+
+.refinement-form textarea {
+  min-height: 88px;
+}
+
 .compact-fieldset {
   grid-template-columns: minmax(0, 1fr) 180px;
   padding: 16px;
