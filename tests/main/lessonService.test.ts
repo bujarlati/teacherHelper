@@ -123,6 +123,39 @@ describe("generateLessonPlan", () => {
     ).resolves.toMatchObject({ title: "一元一次方程" });
   });
 
+  it("repairs non-JSON lesson output with a follow-up structured conversion request", async () => {
+    const fakeClient = {
+      chatCompletion: vi.fn()
+        .mockResolvedValueOnce([
+          "教案标题：一元一次方程",
+          "建议年级：七年级",
+          "目标：理解一元一次方程，会用等式性质解方程。",
+          "视频脚本：展示天平两边保持平衡，逐步消去砝码。"
+        ].join("\n"))
+        .mockResolvedValueOnce(JSON.stringify(completeLessonPlan()))
+    };
+
+    await expect(
+      generateLessonPlan({
+        topic: "一元一次方程",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({
+      title: "一元一次方程",
+      markdown: expect.stringContaining("## 教学流程")
+    });
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(2);
+    expect(fakeClient.chatCompletion.mock.calls[1][0]).toMatchObject({
+      apiKey: "key",
+      modelName: "Qwen/Qwen3-32B",
+      temperature: 0,
+      responseFormat: { type: "json_object" }
+    });
+    expect(fakeClient.chatCompletion.mock.calls[1][0].messages[0].content).toContain("修复为严格 JSON");
+    expect(fakeClient.chatCompletion.mock.calls[1][0].messages[1].content).toContain("教案标题：一元一次方程");
+  });
+
   it("accepts model lesson JSON without markdown because markdown is rendered locally", async () => {
     const { markdown: _markdown, ...modelLesson } = completeLessonPlan();
     const fakeClient = {

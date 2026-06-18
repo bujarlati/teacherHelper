@@ -75,7 +75,12 @@ export async function generateLessonPlan(input: {
     thinkingBudget: 64
   });
 
-  const parsedJson = parseLessonJson(raw);
+  const parsedJson = await parseOrRepairLessonJson({
+    raw,
+    topic: input.topic,
+    config: input.config,
+    client: input.client
+  });
   const parsedPlan = parseLessonPlan(parsedJson);
 
   return {
@@ -152,6 +157,65 @@ function parseLessonJson(value: string): unknown {
   }
 
   throw new Error("模型返回的教案 JSON 无法解析，请重试。");
+}
+
+async function parseOrRepairLessonJson(input: {
+  raw: string;
+  topic: string;
+  config: ModelConfig;
+  client: LessonClient;
+}): Promise<unknown> {
+  try {
+    return parseLessonJson(input.raw);
+  } catch (parseError) {
+    const repairedRaw = await input.client.chatCompletion({
+      apiKey: input.config.apiKey,
+      modelName: input.config.modelName,
+      messages: buildLessonRepairPrompt(input.topic, input.raw),
+      maxTokens: 8192,
+      temperature: 0,
+      responseFormat: { type: "json_object" },
+      thinkingBudget: 0
+    });
+
+    try {
+      return parseLessonJson(repairedRaw);
+    } catch {
+      throw parseError;
+    }
+  }
+}
+
+function buildLessonRepairPrompt(topic: string, raw: string): ReturnType<typeof buildLessonPrompt> {
+  return [
+    {
+      role: "system" as const,
+      content: [
+        "你是一个严格的 JSON 修复器。",
+        "请把用户提供的教案内容修复为严格 JSON，不要解释，不要使用 Markdown 代码块。",
+        "修复为严格 JSON，必须包含：title, grade_suggestion, teaching_goals, key_points, difficult_points, common_confusions, lesson_flow, board_design, example_questions, worked_solutions, classroom_questions, homework_suggestions, video_script, video_prompt。",
+        "如果原文缺少某些字段，请根据已有内容补出简短、可用于课堂的中文内容。",
+        "lesson_flow 每项必须包含 title, minutes, activities；example_questions 每项必须包含 question, answer；worked_solutions 每项必须包含 question, steps, answer。"
+      ].join("\n")
+    },
+    {
+      role: "user" as const,
+      content: [
+        `知识点：${topic}`,
+        "模型上一次输出如下，请只返回修复后的 JSON：",
+        truncateRepairSource(raw)
+      ].join("\n\n")
+    }
+  ];
+}
+
+function truncateRepairSource(value: string): string {
+  const maxLength = 18_000;
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength)}\n\n[原始输出过长，已截断，请基于以上内容修复 JSON]`;
 }
 
 function parseLessonPlan(value: unknown): ModelLessonPlan {
