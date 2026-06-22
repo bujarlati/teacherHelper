@@ -29,8 +29,9 @@ type ParseResult =
   | { ok: false; failure: ParseFailure };
 
 const maxAnalyzeAttempts = 5;
-const analyzeMaxTokens = 4200;
-const analyzeThinkingBudget = 256;
+const designBriefMaxTokens = 1800;
+const analyzeMaxTokens = 8192;
+const analyzeThinkingBudget = 32768;
 
 export { buildAnalyzeProblemPrompt };
 
@@ -43,7 +44,8 @@ export async function analyzeProblemForDemo(input: {
     throw new Error("文本模型配置不完整，请先在设置页填写 API Key 和模型名。");
   }
 
-  let messages: AnalyzeMessage[] = buildAnalyzeProblemPrompt(input.problem);
+  const teachingDesignBrief = await createTeachingDesignBrief(input);
+  let messages: AnalyzeMessage[] = buildAnalyzeProblemPrompt(input.problem, teachingDesignBrief);
   let lastFailure: ParseFailure | undefined;
 
   for (let attempt = 1; attempt <= maxAnalyzeAttempts; attempt += 1) {
@@ -63,10 +65,27 @@ export async function analyzeProblemForDemo(input: {
     }
 
     lastFailure = parsed.failure;
-    messages = buildRepairPromptMessages(input.problem, parsed.failure, attempt + 1);
+    messages = buildRepairPromptMessages(input.problem, teachingDesignBrief, parsed.failure, attempt + 1);
   }
 
   throw createFinalParseError(lastFailure);
+}
+
+async function createTeachingDesignBrief(input: {
+  problem: string;
+  config: ModelConfig;
+  client: AnalyzeClient;
+}): Promise<string> {
+  const raw = await input.client.chatCompletion({
+    apiKey: input.config.apiKey,
+    modelName: input.config.modelName,
+    messages: buildTeachingDesignBriefPrompt(input.problem),
+    maxTokens: designBriefMaxTokens,
+    temperature: 0.2,
+    thinkingBudget: analyzeThinkingBudget
+  });
+
+  return normalizeTeachingDesignBrief(raw);
 }
 
 export function chooseDemoRenderer(plan: ProblemDemoPlan): "motion" | "equation" | "simple" {
@@ -122,7 +141,30 @@ function parseProblemDemoPlan(raw: string): ParseResult {
   };
 }
 
-function buildRepairPromptMessages(problem: string, failure: ParseFailure, attempt: number): AnalyzeMessage[] {
+function buildTeachingDesignBriefPrompt(problem: string): AnalyzeMessage[] {
+  return [
+    {
+      role: "system" as const,
+      content: "你是经验丰富的中国中小学数学老师和互动课件设计师。"
+    },
+    {
+      role: "user" as const,
+      content: [
+        `题目：${problem}`,
+        "先完成一份教学演示设计预案，不要输出 JSON，不要写 HTML。",
+        "请用 5 到 8 条短句说明：题目真正所求、关键数量关系、学生可能误区、课堂开场情境、适合的可视化动画、可拖拽/画笔/提问交互、分步讲解节奏、最后如何核对答案。",
+        "预案要服务于后续网页生成，语言简洁，避免空泛口号。"
+      ].join("\n")
+    }
+  ];
+}
+
+function buildRepairPromptMessages(
+  problem: string,
+  teachingDesignBrief: string,
+  failure: ParseFailure,
+  attempt: number
+): AnalyzeMessage[] {
   return [
     {
       role: "system" as const,
@@ -132,6 +174,7 @@ function buildRepairPromptMessages(problem: string, failure: ParseFailure, attem
       role: "user" as const,
       content: [
         `题目：${problem}`,
+        teachingDesignBrief ? `教学设计预案：\n${teachingDesignBrief}` : "",
         `这是第 ${attempt} 次生成。`,
         failure.kind === "json" ? "上次错误：JSON 无法解析。" : "上次错误：结构字段不完整。",
         failure.fields.length > 0 ? `必须修正字段：${failure.fields.join("、")}` : "",
@@ -145,6 +188,12 @@ function buildRepairPromptMessages(problem: string, failure: ParseFailure, attem
       ].filter(Boolean).join("\n")
     }
   ];
+}
+
+function normalizeTeachingDesignBrief(value: string): string {
+  const compact = value.replace(/\s{3,}/g, "\n").trim();
+
+  return compact.length > 1800 ? `${compact.slice(0, 1800)}...` : compact;
 }
 
 function normalizeProblemDemoPlan(value: unknown): unknown {

@@ -1,4 +1,9 @@
-export function buildAnalyzeProblemPrompt(problem: string) {
+export function buildAnalyzeProblemPrompt(problem: string, teachingDesignBrief = "") {
+  const userContent = [
+    `题目：${problem}`,
+    teachingDesignBrief ? `教学设计预案：\n${teachingDesignBrief}` : ""
+  ].filter(Boolean).join("\n\n");
+
   return [
     {
       role: "system" as const,
@@ -18,7 +23,7 @@ export function buildAnalyzeProblemPrompt(problem: string) {
     },
     {
       role: "user" as const,
-      content: `题目：${problem}`
+      content: userContent
     }
   ];
 }

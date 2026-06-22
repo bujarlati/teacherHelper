@@ -73,6 +73,39 @@ describe("createSiliconFlowClient", () => {
     );
   });
 
+  it("requests max reasoning effort for GLM-5.2 chat completions", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        choices: [{ message: { content: "{\"title\":\"ok\"}" } }]
+      })
+    );
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await client.chatCompletion({
+      apiKey: "key",
+      modelName: "zai-org/GLM-5.2",
+      messages: [{ role: "user", content: "hello" }],
+      maxTokens: 8192,
+      thinkingBudget: 32768
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.siliconflow.cn/v1/chat/completions",
+      expect.objectContaining({
+        body: JSON.stringify({
+          model: "zai-org/GLM-5.2",
+          messages: [{ role: "user", content: "hello" }],
+          stream: false,
+          max_tokens: 8192,
+          temperature: undefined,
+          response_format: undefined,
+          thinking_budget: 32768,
+          reasoning_effort: "max"
+        })
+      })
+    );
+  });
+
   it("submits video and returns request id", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ requestId: "req-1" }));
     const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });

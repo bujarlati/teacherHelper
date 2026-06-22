@@ -75,6 +75,45 @@ describe("buildAnalyzeProblemPrompt", () => {
 });
 
 describe("analyzeProblemForDemo", () => {
+  it("asks the model for a teaching design brief before the structured demo plan", async () => {
+    const fakeClient = {
+      chatCompletion: vi.fn()
+        .mockResolvedValueOnce("教学设计预案：先用生活情境引入，再让学生观察数量关系，最后分步演示。")
+        .mockResolvedValueOnce(JSON.stringify(equationPlan()))
+    };
+
+    await expect(
+      analyzeProblemForDemo({
+        problem: "小明今年 12 岁，比妹妹年龄的 2 倍少 4 岁，妹妹几岁？",
+        config: { apiKey: "key", modelName: "zai-org/GLM-5.2" },
+        client: fakeClient
+      })
+    ).resolves.toEqual(equationPlan());
+
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(2);
+    expect(fakeClient.chatCompletion).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      maxTokens: 1800,
+      thinkingBudget: 32768,
+      messages: expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          content: expect.stringContaining("先完成一份教学演示设计预案")
+        })
+      ])
+    }));
+    expect(fakeClient.chatCompletion).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      maxTokens: 8192,
+      thinkingBudget: 32768,
+      responseFormat: { type: "json_object" },
+      messages: expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          content: expect.stringContaining("教学设计预案：先用生活情境引入")
+        })
+      ])
+    }));
+  });
+
   it("parses equation demo plan JSON returned by the injected client", async () => {
     const fakeClient = {
       chatCompletion: vi.fn(async () => JSON.stringify(equationPlan()))
@@ -88,14 +127,17 @@ describe("analyzeProblemForDemo", () => {
 
     expect(plan.kind).toBe("equation");
     expect(plan.equation?.expression).toBe("2x - 4 = 12");
-    expect(fakeClient.chatCompletion).toHaveBeenCalledWith({
+    expect(fakeClient.chatCompletion).toHaveBeenNthCalledWith(2, {
       apiKey: "key",
       modelName: "Qwen/Qwen3-32B",
-      messages: buildAnalyzeProblemPrompt("小明今年 12 岁，比妹妹年龄的 2 倍少 4 岁，妹妹几岁？"),
-      maxTokens: 4200,
+      messages: buildAnalyzeProblemPrompt(
+        "小明今年 12 岁，比妹妹年龄的 2 倍少 4 岁，妹妹几岁？",
+        JSON.stringify(equationPlan())
+      ),
+      maxTokens: 8192,
       temperature: 0.15,
       responseFormat: { type: "json_object" },
-      thinkingBudget: 256
+      thinkingBudget: 32768
     });
   });
 
@@ -120,7 +162,7 @@ describe("analyzeProblemForDemo", () => {
       kind: "equation",
       steps: ["设未知数：设妹妹年龄为 x 岁", "列方程：根据题意列方程 2x - 4 = 12", "解得 x = 8"]
     });
-    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(1);
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(2);
   });
 
   it("normalizes nested step objects and arrays from complex motion problems", async () => {
@@ -171,7 +213,7 @@ describe("analyzeProblemForDemo", () => {
         "设甲乙两地距离为 x 千米；x ÷ 60 + 1 = x ÷ 40 - 1"
       ]
     });
-    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(1);
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(2);
   });
 
   it("normalizes common known value shapes before validating a demo plan", async () => {
@@ -204,7 +246,7 @@ describe("analyzeProblemForDemo", () => {
         { label: "余数", value: 5 }
       ]
     });
-    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(1);
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(2);
   });
 
   it("throws a clear Chinese error when text model config is blank", async () => {
@@ -248,12 +290,13 @@ describe("analyzeProblemForDemo", () => {
         client: fakeClient
       })
     ).rejects.toThrow("模型连续 5 次未返回可解析的题目演示 JSON，请重试。");
-    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(5);
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(6);
   });
 
   it("asks the model again when the first demo plan is schema-incomplete", async () => {
     const fakeClient = {
       chatCompletion: vi.fn()
+        .mockResolvedValueOnce("教学设计预案：先理解题意，再补齐结构。")
         .mockResolvedValueOnce(JSON.stringify({ kind: "equation", title: "缺少字段" }))
         .mockResolvedValueOnce(JSON.stringify(equationPlan()))
     };
@@ -265,10 +308,10 @@ describe("analyzeProblemForDemo", () => {
         client: fakeClient
       })
     ).resolves.toEqual(equationPlan());
-    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(2);
-    expect(fakeClient.chatCompletion).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      maxTokens: 4200,
-      thinkingBudget: 256,
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(3);
+    expect(fakeClient.chatCompletion).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      maxTokens: 8192,
+      thinkingBudget: 32768,
       messages: expect.arrayContaining([
         expect.objectContaining({
           role: "user",
@@ -285,6 +328,7 @@ describe("analyzeProblemForDemo", () => {
   it("does not downgrade specialized demos and retries until motion data is complete", async () => {
     const fakeClient = {
       chatCompletion: vi.fn()
+        .mockResolvedValueOnce("教学设计预案：用路径动画解释路程、速度、时间。")
         .mockResolvedValueOnce(JSON.stringify({
           kind: "motion",
           title: "行程问题",
@@ -303,12 +347,13 @@ describe("analyzeProblemForDemo", () => {
         client: fakeClient
       })
     ).resolves.toEqual(motionPlan());
-    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(2);
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(3);
   });
 
   it("retries invalid JSON before returning a parse error", async () => {
     const fakeClient = {
       chatCompletion: vi.fn()
+        .mockResolvedValueOnce("教学设计预案：先设关系，再生成结构。")
         .mockResolvedValueOnce("{ bad json")
         .mockResolvedValueOnce("{ still bad")
         .mockResolvedValueOnce(JSON.stringify(equationPlan()))
@@ -321,12 +366,13 @@ describe("analyzeProblemForDemo", () => {
         client: fakeClient
       })
     ).resolves.toEqual(equationPlan());
-    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(3);
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(4);
   });
 
   it("keeps trying up to the fifth attempt before giving up on a useful demo", async () => {
     const fakeClient = {
       chatCompletion: vi.fn()
+        .mockResolvedValueOnce("教学设计预案：逐步补齐结构。")
         .mockResolvedValueOnce(JSON.stringify({ kind: "equation", title: "缺少字段 1" }))
         .mockResolvedValueOnce(JSON.stringify({ kind: "equation", title: "缺少字段 2" }))
         .mockResolvedValueOnce(JSON.stringify({ kind: "equation", title: "缺少字段 3" }))
@@ -341,7 +387,7 @@ describe("analyzeProblemForDemo", () => {
         client: fakeClient
       })
     ).resolves.toMatchObject({ title: "最终成功" });
-    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(5);
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(6);
   });
 
   it("keeps failing after all repair attempts return incomplete JSON", async () => {
@@ -356,7 +402,7 @@ describe("analyzeProblemForDemo", () => {
         client: fakeClient
       })
     ).rejects.toThrow("模型连续 5 次未返回完整题目演示结构");
-    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(5);
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(6);
   });
 });
 

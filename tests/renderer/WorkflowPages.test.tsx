@@ -277,15 +277,15 @@ describe("workflow pages", () => {
     fireEvent.click(screen.getByRole("button", { name: "生成演示" }));
 
     expect(screen.getByRole("progressbar", { name: "题目演示生成进度" })).toBeTruthy();
-    expect(screen.getByText("准备分析题目")).toBeTruthy();
+    expect(screen.getByText("生成教学设计预案")).toBeTruthy();
     expect(screen.getByText("已等待 0 秒")).toBeTruthy();
 
     await vi.advanceTimersByTimeAsync(6000);
-    expect(screen.getByText("等待模型生成演示方案")).toBeTruthy();
+    expect(screen.getByText("等待模型完成深度思考")).toBeTruthy();
     expect(screen.getByText("已等待 6 秒")).toBeTruthy();
 
     await vi.advanceTimersByTimeAsync(24000);
-    expect(screen.getByText("正在生成可交互网页，复杂题目可能需要 1 到 3 分钟。")).toBeTruthy();
+    expect(screen.getByText("正在进行高强度思考和可交互网页生成，复杂题目可能需要 1 到 3 分钟。")).toBeTruthy();
     vi.useRealTimers();
   });
 

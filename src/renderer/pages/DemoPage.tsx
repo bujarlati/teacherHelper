@@ -177,7 +177,7 @@ export function DemoPage(): ReactElement {
             <span style={{ width: `${generationProgress.percent}%` }} />
           </div>
           {generationProgress.isSlow ? (
-            <p>正在生成可交互网页，复杂题目可能需要 1 到 3 分钟。</p>
+            <p>正在进行高强度思考和可交互网页生成，复杂题目可能需要 1 到 3 分钟。</p>
           ) : null}
         </section>
       ) : null}
@@ -261,8 +261,14 @@ function createDemoRefinementProblem(problem: string, plan: ProblemDemoPlan, fee
 }
 
 function createDemoGenerationProgress(elapsedSeconds: number): GenerationProgress {
+  const phase = elapsedSeconds < 4
+    ? "生成教学设计预案"
+    : elapsedSeconds < 16
+      ? "等待模型完成深度思考"
+      : "生成互动网页结构";
+
   return {
-    phase: elapsedSeconds < 3 ? "准备分析题目" : "等待模型生成演示方案",
+    phase,
     elapsedSeconds,
     percent: Math.min(94, 12 + elapsedSeconds * 3),
     isSlow: elapsedSeconds >= 30

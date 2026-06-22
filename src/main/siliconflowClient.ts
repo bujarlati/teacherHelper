@@ -45,6 +45,7 @@ type ChatCompletionInput = {
   temperature?: number;
   responseFormat?: ResponseFormat;
   thinkingBudget?: number;
+  reasoningEffort?: "high" | "max";
 };
 
 type EmbeddingInput = {
@@ -190,7 +191,8 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
         max_tokens: input.maxTokens,
         temperature: input.temperature,
         response_format: input.responseFormat,
-        thinking_budget: input.thinkingBudget
+        thinking_budget: input.thinkingBudget,
+        reasoning_effort: input.reasoningEffort ?? getDefaultReasoningEffort(input.modelName)
       };
 
       const data = await requestJson("/chat/completions", input.apiKey, {
@@ -390,6 +392,10 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
       return result;
     }
   };
+}
+
+function getDefaultReasoningEffort(modelName: string): "max" | undefined {
+  return /(?:^|\/)glm-5\.2(?:$|[-_/])/i.test(modelName) ? "max" : undefined;
 }
 
 function createHttpErrorMessage(status: number, body: string, traceId?: string): string {
