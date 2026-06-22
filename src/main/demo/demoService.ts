@@ -106,7 +106,7 @@ function parseProblemDemoPlan(raw: string): ParseResult {
     };
   }
 
-  const result = problemDemoPlanSchema.safeParse(value);
+  const result = problemDemoPlanSchema.safeParse(normalizeProblemDemoPlan(value));
   if (result.success) {
     return { ok: true, plan: result.data };
   }
@@ -134,7 +134,7 @@ function buildRepairPromptMessages(problem: string, failure: ParseFailure, attem
         "请重新生成完整 JSON，必须严格满足以下要求：",
         "1. 顶层必须包含 kind, title, originalProblem, knownValues, target, steps。",
         "2. knownValues 必须是数组；没有明确数值时返回空数组。",
-        "3. steps 至少给 3 个适合课堂展示的步骤。",
+        "3. steps 必须是字符串数组，每一项是一句完整步骤；例如 [\"先设未知数 x\", \"再列方程 2x - 4 = 12\", \"最后解得 x = 8\"]；不要返回 {title, description} 对象数组。",
         "4. kind 为 motion 时必须完整填写 motion.startLabel, motion.endLabel, motion.distance, motion.distanceUnit, motion.speed, motion.speedUnit, motion.answerSeconds。",
         "5. kind 为 equation 时必须完整填写 equation.variable, equation.relationship, equation.expression, equation.solution, equation.verification。",
         "6. 不能为了省字段把适合 motion 或 equation 的题目改成 simple；用更多 token 补齐字段。",
@@ -143,6 +143,97 @@ function buildRepairPromptMessages(problem: string, failure: ParseFailure, attem
       ].filter(Boolean).join("\n")
     }
   ];
+}
+
+function normalizeProblemDemoPlan(value: unknown): unknown {
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  return {
+    ...value,
+    steps: normalizeStepList(value.steps)
+  };
+}
+
+function normalizeStepList(value: unknown): unknown {
+  if (!Array.isArray(value)) {
+    return value;
+  }
+
+  return value.map((item) => normalizeStepItem(item));
+}
+
+function normalizeStepItem(value: unknown): unknown {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  const title = readTextField(value, ["title", "name", "heading", "step"]);
+  const body = readTextField(value, [
+    "description",
+    "detail",
+    "details",
+    "text",
+    "content",
+    "explanation",
+    "action"
+  ]);
+
+  if (title && body && title !== body) {
+    return `${title}：${body}`;
+  }
+
+  if (title) {
+    return title;
+  }
+
+  if (body) {
+    return body;
+  }
+
+  const primitiveText = Object.values(value)
+    .filter((entry) => typeof entry === "string" || typeof entry === "number")
+    .map((entry) => String(entry).trim())
+    .filter(Boolean);
+
+  return primitiveText.length > 0 ? primitiveText.join("；") : value;
+}
+
+function readTextField(record: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = record[key];
+    const text = stringifyStepPart(value);
+
+    if (text) {
+      return text;
+    }
+  }
+
+  return "";
+}
+
+function stringifyStepPart(value: unknown): string {
+  if (typeof value === "string" || typeof value === "number") {
+    return String(value).trim();
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => stringifyStepPart(item))
+      .filter(Boolean)
+      .join("；");
+  }
+
+  return "";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function collectProblemFields(error: ZodError): string[] {

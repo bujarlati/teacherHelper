@@ -63,6 +63,7 @@ describe("buildAnalyzeProblemPrompt", () => {
     expect(combined).toContain("路程/速度/时间题 -> motion");
     expect(combined).toContain("方程应用题 -> equation");
     expect(combined).toContain("knownValues 可以为空数组");
+    expect(combined).toContain("steps 必须是字符串数组");
     expect(combined).toContain("不能为了省字段把适合 motion 或 equation 的题目改成 simple");
     expect(combined).toContain("小车每秒行 3 米");
   });
@@ -91,6 +92,30 @@ describe("analyzeProblemForDemo", () => {
       responseFormat: { type: "json_object" },
       thinkingBudget: 128
     });
+  });
+
+  it("keeps a high-quality demo when the model returns rich step objects", async () => {
+    const fakeClient = {
+      chatCompletion: vi.fn(async () => JSON.stringify(equationPlan({
+        steps: [
+          { title: "设未知数", description: "设妹妹年龄为 x 岁" },
+          { title: "列方程", detail: "根据题意列方程 2x - 4 = 12" },
+          { text: "解得 x = 8" }
+        ] as unknown as string[]
+      })))
+    };
+
+    await expect(
+      analyzeProblemForDemo({
+        problem: "小明今年 12 岁，比妹妹年龄的 2 倍少 4 岁，妹妹几岁？",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({
+      kind: "equation",
+      steps: ["设未知数：设妹妹年龄为 x 岁", "列方程：根据题意列方程 2x - 4 = 12", "解得 x = 8"]
+    });
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(1);
   });
 
   it("throws a clear Chinese error when text model config is blank", async () => {
