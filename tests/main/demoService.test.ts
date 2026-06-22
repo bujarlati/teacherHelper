@@ -38,6 +38,8 @@ describe("buildAnalyzeProblemPrompt", () => {
     expect(combined).toContain("只返回 JSON");
     expect(combined).toContain("路程/速度/时间题 -> motion");
     expect(combined).toContain("方程应用题 -> equation");
+    expect(combined).toContain("knownValues 可以为空数组");
+    expect(combined).toContain("无法完整填写 motion 或 equation 时，把 kind 改为 simple");
     expect(combined).toContain("小车每秒行 3 米");
   });
 });
@@ -110,7 +112,7 @@ describe("analyzeProblemForDemo", () => {
     ).rejects.toThrow("模型返回的题目演示 JSON 无法解析，请重试。");
   });
 
-  it("rejects schema-invalid model output with a clear Chinese error", async () => {
+  it("normalizes schema-incomplete model output into a simple demo plan", async () => {
     const fakeClient = {
       chatCompletion: vi.fn(async () => JSON.stringify({ kind: "equation", title: "缺少字段" }))
     };
@@ -121,7 +123,46 @@ describe("analyzeProblemForDemo", () => {
         config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
         client: fakeClient
       })
-    ).rejects.toThrow("模型返回的题目演示结构不完整，请重试。");
+    ).resolves.toEqual({
+      kind: "simple",
+      title: "缺少字段",
+      originalProblem: "列方程解决年龄问题",
+      knownValues: [],
+      target: "求解题目中的问题",
+      steps: [
+        "阅读题目，找出已知条件和要求的问题。",
+        "用图示或分步提示整理数量关系。",
+        "逐步计算，并把结果代回题目检查。"
+      ]
+    });
+  });
+
+  it("downgrades a specialized demo to simple when required animation data is missing", async () => {
+    const fakeClient = {
+      chatCompletion: vi.fn(async () => JSON.stringify({
+        kind: "motion",
+        title: "行程问题",
+        originalProblem: "A、B 两地相距 1000 米，小明速度 2 米/秒，需要几秒？",
+        knownValues: [{ label: "距离", value: 1000, unit: "米" }],
+        target: "求时间",
+        steps: ["用时间=路程÷速度"]
+      }))
+    };
+
+    await expect(
+      analyzeProblemForDemo({
+        problem: "A、B 两地相距 1000 米，小明速度 2 米/秒，需要几秒？",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({
+      kind: "simple",
+      title: "行程问题",
+      originalProblem: "A、B 两地相距 1000 米，小明速度 2 米/秒，需要几秒？",
+      knownValues: [{ label: "距离", value: 1000, unit: "米" }],
+      target: "求时间",
+      steps: ["用时间=路程÷速度"]
+    });
   });
 });
 
