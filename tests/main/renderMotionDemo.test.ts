@@ -89,6 +89,55 @@ describe("renderMotionDemoHtml", () => {
     expect(html).not.toContain("<strong>答案：</strong>14400 秒");
   });
 
+  it("uses a relationship comparison board for round-trip distance problems", () => {
+    const html = renderMotionDemoHtml(
+      motionPlan({
+        title: "汽车往返甲乙两地的行程问题",
+        originalProblem: "汽车从甲地到乙地，去时每小时行60千米，比计划时间早到1小时；返回时，每小时行40千米，比计划时间迟到1小时。求甲乙两地的距离。",
+        knownValues: [
+          { label: "去时速度", value: 60, unit: "千米/时" },
+          { label: "返回速度", value: 40, unit: "千米/时" },
+          { label: "去时提前", value: 1, unit: "小时" },
+          { label: "返回迟到", value: 1, unit: "小时" }
+        ],
+        target: "求甲乙两地的距离",
+        steps: [
+          "去时用时比返回少 2 小时",
+          "设距离为 S，列式 S/40 - S/60 = 2",
+          "求出 S = 240 千米"
+        ],
+        motion: {
+          startLabel: "甲地",
+          endLabel: "乙地",
+          distance: 240,
+          distanceUnit: "千米",
+          speed: 60,
+          speedUnit: "千米/时",
+          answerSeconds: 14400,
+          answerLabel: "甲乙两地距离",
+          answerValue: 240,
+          answerUnit: "千米"
+        }
+      })
+    );
+
+    expect(html).toContain("数量关系对比");
+    expect(html).toContain("同一段路程");
+    expect(html).toContain("去时速度快，用时比计划少");
+    expect(html).toContain("返回速度慢，用时比计划多");
+    expect(html).toContain("时间差：少 1 小时 + 多 1 小时 = 2 小时");
+    expect(html).toContain("S/40 - S/60 = 2");
+    expect(html).not.toContain("汽车沿轨道移动");
+  });
+
+  it("does not show round-trip time-difference wording for one-way motion problems", () => {
+    const html = renderMotionDemoHtml(motionPlan());
+
+    expect(html).toContain("基本关系：路程 = 速度 × 时间");
+    expect(html).not.toContain("时间差来自“提前”和“迟到”的合并比较");
+    expect(html).not.toContain("返回速度慢，用时比计划多");
+  });
+
   it("renders the final answer with an open-ended question target label", () => {
     const html = renderMotionDemoHtml(
       motionPlan({

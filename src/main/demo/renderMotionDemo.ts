@@ -21,6 +21,7 @@ export function renderMotionDemoHtml(plan: ProblemDemoPlan): string {
   const playbackSeconds = 6;
   const realTimeLabel = formatDuration(motion.answerSeconds);
   const sceneActor = inferSceneActor(plan.originalProblem);
+  const relationBoard = createMotionRelationBoard(plan, sceneActor);
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -195,6 +196,37 @@ export function renderMotionDemoHtml(plan: ProblemDemoPlan): string {
       cursor: crosshair;
     }
 
+    .relation-board {
+      position: relative;
+      display: grid;
+      gap: 14px;
+      border: 1px solid #d8e2f0;
+      border-radius: 8px;
+      background: #f8fbff;
+      padding: 16px;
+      min-height: 260px;
+      overflow: hidden;
+    }
+
+    .route-summary {
+      display: grid;
+      gap: 10px;
+    }
+
+    .route-heading {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: #24324a;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+
+    .route-distance {
+      color: #0f766e;
+      white-space: nowrap;
+    }
+
     .step-card {
       border: 1px solid #dbe3ef;
       border-radius: 8px;
@@ -223,6 +255,74 @@ export function renderMotionDemoHtml(plan: ProblemDemoPlan): string {
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
+    }
+
+    .relation-lanes {
+      display: grid;
+      gap: 10px;
+    }
+
+    .relation-lane {
+      display: grid;
+      grid-template-columns: 88px minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+    }
+
+    .lane-label {
+      color: #172033;
+      font-weight: 700;
+    }
+
+    .lane-track {
+      border: 1px solid #dde7f3;
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 10px 12px;
+    }
+
+    .lane-meta {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 8px;
+      color: #405069;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .lane-bar {
+      height: 10px;
+      margin-top: 8px;
+      border-radius: 999px;
+      background: #dbeafe;
+      overflow: hidden;
+    }
+
+    .lane-bar span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: #0f766e;
+    }
+
+    .lane-bar.slow span {
+      width: 54%;
+      background: #f59e0b;
+    }
+
+    .lane-bar.fast span {
+      width: 82%;
+    }
+
+    .relationship-note {
+      border-left: 4px solid #0f766e;
+      background: #eefcf8;
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: #172033;
+      line-height: 1.7;
+      font-weight: 700;
     }
 
     .metrics {
@@ -302,17 +402,10 @@ export function renderMotionDemoHtml(plan: ProblemDemoPlan): string {
     </section>
 
     <section class="panel scene" aria-labelledby="motion-scene-title">
-      <h2 id="motion-scene-title">${escapeHtml(sceneActor)}沿轨道移动</h2>
+      <h2 id="motion-scene-title">数量关系对比</h2>
       <div class="teaching-grid">
         <div id="stage" class="stage">
-          <div class="labels">
-            <span>${escapeHtml(motion.startLabel)}</span>
-            <span>${escapeHtml(motion.endLabel)}</span>
-          </div>
-          <div id="track" class="track">
-            <div id="walker" class="walker">${escapeHtml(sceneActor)}</div>
-            <div id="drag-marker" class="drag-marker" draggable="true" data-drag-marker>重点</div>
-          </div>
+          ${relationBoard}
           <canvas id="annotation-canvas" class="annotation-canvas" aria-label="课堂批注画板"></canvas>
         </div>
         <aside class="step-card" aria-label="当前讲解步骤">
@@ -541,6 +634,72 @@ export function renderMotionDemoHtml(plan: ProblemDemoPlan): string {
 </html>`;
 }
 
+function createMotionRelationBoard(plan: ProblemDemoPlan, sceneActor: string): string {
+  const motion = plan.motion;
+  if (!motion) {
+    return "";
+  }
+
+  const outboundSpeed = findKnownValue(plan, [/去|往|出发|甲地到乙地/, /速度|每小时|每秒/])
+    ?? formatQuantity(motion.speed, motion.speedUnit);
+  const returnSpeed = findKnownValue(plan, [/返|回|乙地到甲地/, /速度|每小时|每秒/]);
+  const earlyTime = findKnownValue(plan, [/提前|早到|少/, /时|分|秒|时间/]) ?? findKnownValue(plan, [/提前|早到|少/]);
+  const lateTime = findKnownValue(plan, [/迟到|晚到|多/, /时|分|秒|时间/]) ?? findKnownValue(plan, [/迟到|晚到|多/]);
+  const comparisonStep = plan.steps.find((step) => /方程|列式|S\/|x\/|时间差|少.*多|提前.*迟到/.test(step))
+    ?? "速度越快，用时越短；速度越慢，用时越长。";
+  const distanceText = createMotionAnswer(plan);
+  const hasReturnTrip = Boolean(returnSpeed || /返回|返程|回程|迟到|晚到/.test(plan.originalProblem));
+  const firstLaneText = hasReturnTrip ? "去时速度快，用时比计划少" : "速度给出每段时间能走多远";
+  const secondLaneText = hasReturnTrip ? "返回速度慢，用时比计划多" : "同一路程下，用 路程 ÷ 速度 得到时间";
+  const secondLaneValue = hasReturnTrip ? returnSpeed ?? "返回速度待比较" : "路程 ÷ 速度 = 时间";
+  const relationshipText = hasReturnTrip
+    ? `${earlyTime && lateTime ? `时间差：少 ${earlyTime} + 多 ${lateTime} = 2 小时` : "时间差来自“提前”和“迟到”的合并比较"}；${comparisonStep}`
+    : `基本关系：路程 = 速度 × 时间；${plan.steps[0] ?? "用 路程 ÷ 速度 求时间"}`;
+
+  return `
+          <div class="relation-board">
+            <div class="route-summary">
+              <div class="route-heading">
+                <span>同一段路程：${escapeHtml(motion.startLabel)} → ${escapeHtml(motion.endLabel)}</span>
+                <span class="route-distance">${escapeHtml(createMotionAnswerLabel(plan))}：${escapeHtml(distanceText)}</span>
+              </div>
+              <div class="labels">
+                <span>${escapeHtml(motion.startLabel)}</span>
+                <span>${escapeHtml(motion.endLabel)}</span>
+              </div>
+              <div id="track" class="track" aria-label="同一段路程的压缩动画">
+                <div id="walker" class="walker">${escapeHtml(sceneActor)}</div>
+                <div id="drag-marker" class="drag-marker" draggable="true" data-drag-marker>讲解点</div>
+              </div>
+            </div>
+            <div class="relation-lanes" aria-label="速度和用时对比">
+              <div class="relation-lane">
+                <div class="lane-label">${hasReturnTrip ? "去时" : "行驶"}</div>
+                <div class="lane-track">
+                  <div class="lane-meta">
+                    <span>${escapeHtml(firstLaneText)}</span>
+                    <strong>${escapeHtml(outboundSpeed)}</strong>
+                  </div>
+                  <div class="lane-bar fast"><span></span></div>
+                </div>
+              </div>
+              <div class="relation-lane">
+                <div class="lane-label">${hasReturnTrip ? "返回" : "对比"}</div>
+                <div class="lane-track">
+                  <div class="lane-meta">
+                    <span>${escapeHtml(secondLaneText)}</span>
+                    <strong>${escapeHtml(secondLaneValue)}</strong>
+                  </div>
+                  <div class="lane-bar slow"><span></span></div>
+                </div>
+              </div>
+            </div>
+            <div class="relationship-note">
+              ${escapeHtml(relationshipText)}
+            </div>
+          </div>`;
+}
+
 function createMotionAnswer(plan: ProblemDemoPlan): string {
   const motion = plan.motion;
   if (!motion) {
@@ -606,6 +765,20 @@ function inferSceneActor(problem: string): string {
   }
 
   return "小明";
+}
+
+function findKnownValue(plan: ProblemDemoPlan, patterns: RegExp[]): string | undefined {
+  const found = plan.knownValues.find((item) => {
+    const label = `${item.label}${item.unit ?? ""}`;
+
+    return patterns.every((pattern) => pattern.test(label));
+  });
+
+  if (!found) {
+    return undefined;
+  }
+
+  return formatQuantity(found.value, found.unit ?? "");
 }
 
 function formatQuantity(value: number | string, unit: string): string {
