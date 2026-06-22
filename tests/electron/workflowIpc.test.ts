@@ -305,7 +305,7 @@ describe("registerWorkflowIpcHandlers", () => {
     }));
   });
 
-  it("generates lesson image assets and injects them into the local teaching demo", async () => {
+  it("generates lesson image assets and writes them as separate local courseware files", async () => {
     const fakeIpcMain = createFakeIpcMain();
     const imageAssets = [{
       title: "故事导入图",
@@ -341,8 +341,16 @@ describe("registerWorkflowIpcHandlers", () => {
       dataDir: tmpDir
     });
     expect(renderTeachingDemoHtml).toHaveBeenCalledWith(expect.objectContaining({
-      imageAssets
+      imageAssets: [expect.objectContaining({
+        title: "故事导入图",
+        prompt: "数轴小路",
+        src: "assets/lesson-images/01-故事导入图.png",
+        localPath: join(tmpDir, "local-demos", "lesson-1", "assets", "lesson-images", "01-故事导入图.png")
+      })]
     }));
+    await expect(
+      readFile(join(tmpDir, "local-demos", "lesson-1", "assets", "lesson-images", "01-故事导入图.png"))
+    ).resolves.toEqual(Buffer.from([1, 2, 3]));
   });
 
   it("keeps the lesson and local demo when lesson image generation fails", async () => {

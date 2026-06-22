@@ -1,5 +1,5 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
+import { extname, join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { lessonPlanSchema } from "../src/shared/schemas.js";
 import type {
@@ -581,17 +581,20 @@ async function generateLocalTeachingDemo(
   const parsed = localTeachingDemoInputSchema.parse(input);
   const id = options.id ?? deps.createId();
   const title = options.title ?? createLocalDemoTitle(parsed.prompt);
+  const demoDir = join(deps.dataDir, "local-demos", id);
+  await mkdir(demoDir, { recursive: true });
+  const localizedImageAssets = parsed.imageAssets
+    ? await writeCoursewareImageAssets(parsed.imageAssets, demoDir)
+    : undefined;
   const html = deps.renderTeachingDemoHtml({
     title,
     prompt: parsed.prompt,
     script: parsed.script,
     ...(parsed.exampleQuestions ? { exampleQuestions: parsed.exampleQuestions } : {}),
     ...(parsed.workedSolutions ? { workedSolutions: parsed.workedSolutions } : {}),
-    ...(parsed.imageAssets ? { imageAssets: parsed.imageAssets } : {})
+    ...(localizedImageAssets ? { imageAssets: localizedImageAssets } : {})
   });
-  const demoDir = join(deps.dataDir, "local-demos", id);
 
-  await mkdir(demoDir, { recursive: true });
   await writeFile(join(demoDir, "index.html"), html, "utf8");
 
   let newDemoServer: DemoServer | undefined;
@@ -629,6 +632,73 @@ function renderDemoHtml(renderer: "motion" | "equation" | "simple", plan: Proble
   if (renderer === "equation") return deps.renderEquationDemoHtml(plan);
 
   return deps.renderSimpleDemoHtml(plan);
+}
+
+async function writeCoursewareImageAssets(
+  imageAssets: LessonImageAsset[],
+  demoDir: string
+): Promise<LessonImageAsset[] | undefined> {
+  const assetsDir = join(demoDir, "assets", "lesson-images");
+  const localizedAssets: LessonImageAsset[] = [];
+
+  for (const [index, asset] of imageAssets.entries()) {
+    const fileName = createCoursewareImageFileName(asset, index);
+    const filePath = join(assetsDir, fileName);
+    const relativeSrc = `assets/lesson-images/${fileName}`;
+
+    try {
+      await mkdir(assetsDir, { recursive: true });
+      if (asset.localPath) {
+        await copyFile(asset.localPath, filePath);
+      } else {
+        await writeDataUrlImage(asset.src, filePath);
+      }
+
+      localizedAssets.push({
+        ...asset,
+        src: relativeSrc,
+        localPath: filePath
+      });
+    } catch {
+      if (!asset.src.startsWith("data:image/")) {
+        localizedAssets.push(asset);
+      }
+    }
+  }
+
+  return localizedAssets.length > 0 ? localizedAssets : undefined;
+}
+
+async function writeDataUrlImage(dataUrl: string, filePath: string): Promise<void> {
+  const match = dataUrl.match(/^data:image\/[a-zA-Z0-9.+-]+;base64,([A-Za-z0-9+/=]+)$/);
+  if (!match?.[1]) {
+    throw new Error("invalid data image url");
+  }
+
+  await writeFile(filePath, Buffer.from(match[1], "base64"));
+}
+
+function createCoursewareImageFileName(asset: LessonImageAsset, index: number): string {
+  const extension = getCoursewareImageExtension(asset);
+  return `${String(index + 1).padStart(2, "0")}-${safeFileName(asset.title)}${extension}`;
+}
+
+function getCoursewareImageExtension(asset: LessonImageAsset): string {
+  if (asset.localPath) {
+    const extension = extname(asset.localPath).toLowerCase();
+    if ([".png", ".jpg", ".jpeg", ".webp"].includes(extension)) {
+      return extension === ".jpeg" ? ".jpg" : extension;
+    }
+  }
+
+  const match = asset.src.match(/^data:image\/([a-zA-Z0-9.+-]+);base64,/);
+  if (match?.[1]) {
+    const type = match[1].toLowerCase();
+    if (type === "jpeg" || type === "jpg") return ".jpg";
+    if (type === "webp") return ".webp";
+  }
+
+  return ".png";
 }
 
 async function updateLessonWordPath(historyStore: HistoryStoreLike, id: string, filePath: string): Promise<void> {
