@@ -63,6 +63,7 @@ describe("buildAnalyzeProblemPrompt", () => {
     expect(combined).toContain("路程/速度/时间题 -> motion");
     expect(combined).toContain("方程应用题 -> equation");
     expect(combined).toContain("knownValues 可以为空数组");
+    expect(combined).toContain("{label,value,unit?}");
     expect(combined).toContain("steps 必须是字符串数组");
     expect(combined).toContain("targetQuantity");
     expect(combined).toContain("answerLabel");
@@ -91,10 +92,10 @@ describe("analyzeProblemForDemo", () => {
       apiKey: "key",
       modelName: "Qwen/Qwen3-32B",
       messages: buildAnalyzeProblemPrompt("小明今年 12 岁，比妹妹年龄的 2 倍少 4 岁，妹妹几岁？"),
-      maxTokens: 3200,
+      maxTokens: 4200,
       temperature: 0.15,
       responseFormat: { type: "json_object" },
-      thinkingBudget: 128
+      thinkingBudget: 256
     });
   });
 
@@ -173,6 +174,39 @@ describe("analyzeProblemForDemo", () => {
     expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(1);
   });
 
+  it("normalizes common known value shapes before validating a demo plan", async () => {
+    const fakeClient = {
+      chatCompletion: vi.fn(async () => JSON.stringify(equationPlan({
+        title: "错题纠正",
+        originalProblem: "小强在计算除法时，把除数 76 写成 67，结果得到的商是 15 还余 5。正确的商应该是几？",
+        knownValues: [
+          { name: "正确除数", amount: 76 },
+          { key: "误写除数", text: "67" },
+          "错误商=15",
+          { label: "余数", count: 5 }
+        ] as unknown as ProblemDemoPlan["knownValues"],
+        target: "求正确的商"
+      })))
+    };
+
+    await expect(
+      analyzeProblemForDemo({
+        problem: "小强在计算除法时，把除数 76 写成 67，结果得到的商是 15 还余 5。正确的商应该是几？",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({
+      title: "错题纠正",
+      knownValues: [
+        { label: "正确除数", value: 76 },
+        { label: "误写除数", value: "67" },
+        { label: "已知条件 3", value: "错误商=15" },
+        { label: "余数", value: 5 }
+      ]
+    });
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(1);
+  });
+
   it("throws a clear Chinese error when text model config is blank", async () => {
     const fakeClient = {
       chatCompletion: vi.fn(async () => JSON.stringify(equationPlan()))
@@ -213,8 +247,8 @@ describe("analyzeProblemForDemo", () => {
         config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
         client: fakeClient
       })
-    ).rejects.toThrow("模型连续 3 次未返回可解析的题目演示 JSON，请重试。");
-    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(3);
+    ).rejects.toThrow("模型连续 5 次未返回可解析的题目演示 JSON，请重试。");
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(5);
   });
 
   it("asks the model again when the first demo plan is schema-incomplete", async () => {
@@ -233,12 +267,12 @@ describe("analyzeProblemForDemo", () => {
     ).resolves.toEqual(equationPlan());
     expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(2);
     expect(fakeClient.chatCompletion).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      maxTokens: 3200,
-      thinkingBudget: 128,
+      maxTokens: 4200,
+      thinkingBudget: 256,
       messages: expect.arrayContaining([
         expect.objectContaining({
           role: "user",
-          content: expect.stringContaining("上一次返回不符合题目演示 JSON 结构")
+          content: expect.stringContaining("上次错误：结构字段不完整")
         }),
         expect.objectContaining({
           role: "user",
@@ -290,6 +324,26 @@ describe("analyzeProblemForDemo", () => {
     expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(3);
   });
 
+  it("keeps trying up to the fifth attempt before giving up on a useful demo", async () => {
+    const fakeClient = {
+      chatCompletion: vi.fn()
+        .mockResolvedValueOnce(JSON.stringify({ kind: "equation", title: "缺少字段 1" }))
+        .mockResolvedValueOnce(JSON.stringify({ kind: "equation", title: "缺少字段 2" }))
+        .mockResolvedValueOnce(JSON.stringify({ kind: "equation", title: "缺少字段 3" }))
+        .mockResolvedValueOnce(JSON.stringify({ kind: "equation", title: "缺少字段 4" }))
+        .mockResolvedValueOnce(JSON.stringify(equationPlan({ title: "最终成功" })))
+    };
+
+    await expect(
+      analyzeProblemForDemo({
+        problem: "列方程解决年龄问题",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({ title: "最终成功" });
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(5);
+  });
+
   it("keeps failing after all repair attempts return incomplete JSON", async () => {
     const fakeClient = {
       chatCompletion: vi.fn(async () => JSON.stringify({ kind: "equation", title: "仍然缺字段" }))
@@ -301,8 +355,8 @@ describe("analyzeProblemForDemo", () => {
         config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
         client: fakeClient
       })
-    ).rejects.toThrow("模型连续 3 次未返回完整题目演示结构");
-    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(3);
+    ).rejects.toThrow("模型连续 5 次未返回完整题目演示结构");
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(5);
   });
 });
 

@@ -28,9 +28,9 @@ type ParseResult =
   | { ok: true; plan: ProblemDemoPlan }
   | { ok: false; failure: ParseFailure };
 
-const maxAnalyzeAttempts = 3;
-const analyzeMaxTokens = 3200;
-const analyzeThinkingBudget = 128;
+const maxAnalyzeAttempts = 5;
+const analyzeMaxTokens = 4200;
+const analyzeThinkingBudget = 256;
 
 export { buildAnalyzeProblemPrompt };
 
@@ -124,24 +124,24 @@ function parseProblemDemoPlan(raw: string): ParseResult {
 
 function buildRepairPromptMessages(problem: string, failure: ParseFailure, attempt: number): AnalyzeMessage[] {
   return [
-    ...buildAnalyzeProblemPrompt(problem),
+    {
+      role: "system" as const,
+      content: "你是中国中小学数学老师。请把题目重新分析为一个可交互课堂演示 JSON，只返回 JSON，不要 Markdown。"
+    },
     {
       role: "user" as const,
       content: [
-        `上一次返回不符合题目演示 JSON 结构，这是第 ${attempt} 次生成。`,
-        failure.kind === "json" ? "错误类型：JSON 无法解析。" : "错误类型：结构字段不完整。",
-        failure.fields.length > 0 ? `问题字段：${failure.fields.join("、")}` : "",
-        "请重新生成完整 JSON，必须严格满足以下要求：",
-        "1. 顶层必须包含 kind, title, originalProblem, knownValues, target, steps。",
-        "2. knownValues 必须是数组；没有明确数值时返回空数组。",
-        "3. steps 必须是字符串数组，每一项是一句完整步骤；例如 [\"先设未知数 x\", \"再列方程 2x - 4 = 12\", \"最后解得 x = 8\"]；不要返回 {title, description} 对象数组。",
-        "4. kind 为 motion 时必须完整填写 motion.startLabel, motion.endLabel, motion.distance, motion.distanceUnit, motion.speed, motion.speedUnit, motion.answerSeconds, motion.targetQuantity, motion.answerLabel, motion.answerValue, motion.answerUnit。",
-        "5. motion.targetQuantity 和 answerLabel 必须用自然语言写出题目最终所求，例如“甲乙两地距离”“相遇地点距离甲地”“实际比计划提前的时间”；不要限制为 time/distance/speed。",
-        "6. motion.answerValue 和 answerUnit 必须对应题目最终所求；辅助动画需要的实际用时放在 answerSeconds，不能把辅助用时当最终答案。",
-        "7. kind 为 equation 时必须完整填写 equation.variable, equation.relationship, equation.expression, equation.solution, equation.verification。",
-        "8. 不能为了省字段把适合 motion 或 equation 的题目改成 simple；用更多 token 补齐字段。",
-        "9. 只返回 JSON，不要 Markdown，不要解释。",
-        `上一次返回内容：${truncateRawResponse(failure.raw)}`
+        `题目：${problem}`,
+        `这是第 ${attempt} 次生成。`,
+        failure.kind === "json" ? "上次错误：JSON 无法解析。" : "上次错误：结构字段不完整。",
+        failure.fields.length > 0 ? `必须修正字段：${failure.fields.join("、")}` : "",
+        "顶层必须有：kind,title,originalProblem,knownValues,target,steps。",
+        "kind 只能是 motion/equation/engineering/geometry/simple；不要为省字段把行程题或方程题降级成 simple。",
+        "knownValues 必须是数组，每项必须是 {\"label\":\"条件名\",\"value\":数字或文本,\"unit\":\"单位，可省略\"}。",
+        "steps 必须是至少 3 个字符串，按课堂讲解顺序写。",
+        "motion 题必须补齐 motion.startLabel,endLabel,distance,distanceUnit,speed,speedUnit,answerSeconds,targetQuantity,answerLabel,answerValue,answerUnit；answerValue 必须是题目最终所求，不要把动画用时误当答案。",
+        "equation 题必须补齐 equation.variable,relationship,expression,solution,verification。",
+        "只返回完整 JSON 对象。"
       ].filter(Boolean).join("\n")
     }
   ];
@@ -152,10 +152,104 @@ function normalizeProblemDemoPlan(value: unknown): unknown {
     return value;
   }
 
+  const knownValues = readField(value, [
+    "knownValues",
+    "known_values",
+    "knownConditions",
+    "conditions",
+    "givens",
+    "knowns",
+    "已知条件"
+  ]);
+
   return {
     ...value,
+    knownValues: normalizeKnownValueList(knownValues),
     steps: normalizeStepList(value.steps)
   };
+}
+
+function normalizeKnownValueList(value: unknown): unknown {
+  if (value === undefined || value === null || value === "") {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item, index) => normalizeKnownValueItem(item, index));
+  }
+
+  if (isRecord(value)) {
+    return Object.entries(value).map(([label, item], index) => {
+      if (isRecord(item)) {
+        return normalizeKnownValueItem({ label, ...item }, index);
+      }
+
+      return normalizeKnownValueItem({ label, value: item }, index);
+    });
+  }
+
+  return [normalizeKnownValueItem(value, 0)];
+}
+
+function normalizeKnownValueItem(value: unknown, index: number): unknown {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return { label: `已知条件 ${index + 1}`, value: normalizeKnownScalar(value) };
+  }
+
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  const label = readTextField(value, [
+    "label",
+    "name",
+    "key",
+    "title",
+    "condition",
+    "field",
+    "item",
+    "条件",
+    "名称",
+    "项目"
+  ]) || `已知条件 ${index + 1}`;
+  const rawValue = readField(value, [
+    "value",
+    "amount",
+    "number",
+    "count",
+    "text",
+    "content",
+    "data",
+    "值",
+    "数值",
+    "数量"
+  ]);
+  const unit = readTextField(value, ["unit", "单位", "unitName"]);
+  const normalizedValue = rawValue === undefined ? stringifyStepPart(value) || label : normalizeKnownScalar(rawValue);
+
+  return {
+    label,
+    value: normalizedValue,
+    ...(unit ? { unit } : {})
+  };
+}
+
+function normalizeKnownScalar(value: unknown): number | string {
+  if (typeof value === "number") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    return normalizeText(value);
+  }
+
+  if (typeof value === "boolean") {
+    return String(value);
+  }
+
+  const text = stringifyStepPart(value);
+
+  return text || String(value);
 }
 
 function normalizeStepList(value: unknown): unknown {
@@ -225,6 +319,16 @@ function readTextField(record: Record<string, unknown>, keys: string[]): string 
   return "";
 }
 
+function readField(record: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(record, key)) {
+      return record[key];
+    }
+  }
+
+  return undefined;
+}
+
 function stringifyStepPart(value: unknown): string {
   if (typeof value === "string") {
     return normalizeText(value);
@@ -275,11 +379,6 @@ function createFinalParseError(failure: ParseFailure | undefined): Error {
   }
 
   return new Error(`模型连续 ${maxAnalyzeAttempts} 次未返回可解析的题目演示 JSON，请重试。`);
-}
-
-function truncateRawResponse(value: string): string {
-  const compact = value.replace(/\s+/g, " ").trim();
-  return compact.length > 1200 ? `${compact.slice(0, 1200)}...` : compact;
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
