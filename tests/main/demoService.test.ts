@@ -118,6 +118,57 @@ describe("analyzeProblemForDemo", () => {
     expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(1);
   });
 
+  it("normalizes nested step objects and arrays from complex motion problems", async () => {
+    const fakeClient = {
+      chatCompletion: vi.fn(async () => JSON.stringify(motionPlan({
+        title: "往返行程问题",
+        originalProblem: "汽车从甲地到乙地，去时每小时行60千米，比计划时间早到1小时；返回时，每小时行40千米，比计划时间迟到1小时。求甲乙两地的距离。",
+        target: "求甲乙两地的距离",
+        steps: [
+          {
+            teacher: { prompt: "比较去程和计划时间", board: "去程时间 = 计划时间 - 1" },
+            visual: { cue: "60 千米/小时更快，所以提前到达" }
+          },
+          [
+            { text: "比较回程和计划时间" },
+            { detail: "回程时间 = 计划时间 + 1" }
+          ],
+          {
+            reasoning: {
+              setup: "设甲乙两地距离为 x 千米",
+              formula: "x ÷ 60 + 1 = x ÷ 40 - 1"
+            }
+          }
+        ] as unknown as string[],
+        motion: {
+          startLabel: "甲地",
+          endLabel: "乙地",
+          distance: 120,
+          distanceUnit: "千米",
+          speed: 60,
+          speedUnit: "千米/小时",
+          answerSeconds: 7200
+        }
+      })))
+    };
+
+    await expect(
+      analyzeProblemForDemo({
+        problem: "汽车从甲地到乙地，去时每小时行60千米，比计划时间早到1小时；返回时，每小时行40千米，比计划时间迟到1小时。求甲乙两地的距离。",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({
+      kind: "motion",
+      steps: [
+        "比较去程和计划时间；去程时间 = 计划时间 - 1；60 千米/小时更快，所以提前到达",
+        "比较回程和计划时间；回程时间 = 计划时间 + 1",
+        "设甲乙两地距离为 x 千米；x ÷ 60 + 1 = x ÷ 40 - 1"
+      ]
+    });
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(1);
+  });
+
   it("throws a clear Chinese error when text model config is blank", async () => {
     const fakeClient = {
       chatCompletion: vi.fn(async () => JSON.stringify(equationPlan()))

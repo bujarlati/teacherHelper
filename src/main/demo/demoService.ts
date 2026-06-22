@@ -166,7 +166,16 @@ function normalizeStepList(value: unknown): unknown {
 
 function normalizeStepItem(value: unknown): unknown {
   if (typeof value === "string") {
-    return value.trim();
+    return normalizeText(value);
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    const text = stringifyStepPart(value);
+    return text || value;
   }
 
   if (!isRecord(value)) {
@@ -196,12 +205,9 @@ function normalizeStepItem(value: unknown): unknown {
     return body;
   }
 
-  const primitiveText = Object.values(value)
-    .filter((entry) => typeof entry === "string" || typeof entry === "number")
-    .map((entry) => String(entry).trim())
-    .filter(Boolean);
+  const nestedText = stringifyStepPart(value);
 
-  return primitiveText.length > 0 ? primitiveText.join("；") : value;
+  return nestedText || value;
 }
 
 function readTextField(record: Record<string, unknown>, keys: string[]): string {
@@ -218,8 +224,12 @@ function readTextField(record: Record<string, unknown>, keys: string[]): string 
 }
 
 function stringifyStepPart(value: unknown): string {
-  if (typeof value === "string" || typeof value === "number") {
-    return String(value).trim();
+  if (typeof value === "string") {
+    return normalizeText(value);
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
   }
 
   if (Array.isArray(value)) {
@@ -229,7 +239,18 @@ function stringifyStepPart(value: unknown): string {
       .join("；");
   }
 
+  if (isRecord(value)) {
+    return Object.values(value)
+      .map((entry) => stringifyStepPart(entry))
+      .filter(Boolean)
+      .join("；");
+  }
+
   return "";
+}
+
+function normalizeText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
