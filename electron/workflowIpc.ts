@@ -34,6 +34,7 @@ type AiHtmlChatClient = {
     thinkingBudget?: number;
     reasoningEffort?: "high" | "max";
     timeoutMs?: number;
+    stream?: boolean;
   }): Promise<string>;
 };
 
@@ -579,6 +580,7 @@ async function generateAiHtmlDemo(
     thinkingBudget: 32768,
     reasoningEffort: "max",
     timeoutMs: 900_000,
+    stream: true,
     messages: [
       {
         role: "system",

@@ -47,6 +47,7 @@ type ChatCompletionInput = {
   thinkingBudget?: number;
   reasoningEffort?: "high" | "max";
   timeoutMs?: number;
+  stream?: boolean;
 };
 
 type EmbeddingInput = {
@@ -140,6 +141,36 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
     throw new Error(`SiliconFlow 网络请求中断，请稍后重试或检查网络/代理连接。原始错误：${getErrorMessage(lastTransientError)}`);
   }
 
+  async function requestTextStream(path: string, apiKey: string, init: RequestInit, requestTimeoutMs = timeoutMs): Promise<string> {
+    let lastTransientError: unknown;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        return await requestTextStreamOnce(path, apiKey, init, requestTimeoutMs);
+      } catch (error) {
+        const transientNetworkError = isTransientNetworkError(error);
+        const transientHttpError = isTransientHttpError(error);
+        if ((!transientNetworkError && !transientHttpError) || attempt === maxAttempts) {
+          if (isTransientNetworkError(error)) {
+            throw new Error(`SiliconFlow 网络请求中断，请稍后重试或检查网络/代理连接。原始错误：${getErrorMessage(error)}`);
+          }
+          if (isTransientHttpError(error)) {
+            throw new Error(
+              `硅基流动服务暂时不可用（HTTP ${error.status}），已重试 ${maxAttempts} 次。请稍后重试，或检查该模型当前是否可用。原始错误：${getErrorMessage(error)}`
+            );
+          }
+
+          throw error;
+        }
+
+        lastTransientError = error;
+        await delay(getRetryDelay(error, retryDelayMs * attempt));
+      }
+    }
+
+    throw new Error(`SiliconFlow 网络请求中断，请稍后重试或检查网络/代理连接。原始错误：${getErrorMessage(lastTransientError)}`);
+  }
+
   async function requestJsonOnce(path: string, apiKey: string, init: RequestInit, requestTimeoutMs: number): Promise<unknown> {
     const controller = new AbortController();
     const timeout = setTimeout(() => {
@@ -183,18 +214,68 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
     }
   }
 
+  async function requestTextStreamOnce(path: string, apiKey: string, init: RequestInit, requestTimeoutMs: number): Promise<string> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, requestTimeoutMs);
+
+    try {
+      const response = await fetchImpl(`${baseUrl}${path}`, {
+        ...init,
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          ...(init.headers ?? {}),
+          Authorization: `Bearer ${apiKey}`
+        }
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new SiliconFlowHttpError(
+          response.status,
+          text,
+          parseRetryAfterMs(response.headers.get("retry-after")),
+          response.headers.get("x-siliconcloud-trace-id") ?? undefined
+        );
+      }
+
+      if (!response.body) {
+        throw new Error("SiliconFlow returned invalid chat completion response");
+      }
+
+      return await readChatCompletionStream(response.body);
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new Error("硅基流动请求超时，请检查网络、API Key、模型名，或换用响应更快的文本模型后重试。");
+      }
+
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   return {
     async chatCompletion(input: ChatCompletionInput): Promise<string> {
       const body: Record<string, JsonValue | undefined> = {
         model: input.modelName,
         messages: input.messages,
-        stream: false,
+        stream: input.stream ?? false,
         max_tokens: input.maxTokens,
         temperature: input.temperature,
         response_format: input.responseFormat,
         thinking_budget: input.thinkingBudget,
         reasoning_effort: input.reasoningEffort ?? getDefaultReasoningEffort(input.modelName)
       };
+
+      if (input.stream) {
+        return requestTextStream("/chat/completions", input.apiKey, {
+          method: "POST",
+          body: JSON.stringify(body)
+        }, input.timeoutMs);
+      }
 
       const data = await requestJson("/chat/completions", input.apiKey, {
         method: "POST",
@@ -397,6 +478,68 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
 
 function getDefaultReasoningEffort(modelName: string): "max" | undefined {
   return /(?:^|\/)glm-5\.2(?:$|[-_/])/i.test(modelName) ? "max" : undefined;
+}
+
+async function readChatCompletionStream(body: ReadableStream<Uint8Array>): Promise<string> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let content = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      buffer += decoder.decode();
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      const result = readChatCompletionStreamLine(line);
+      if (result.done) {
+        return content;
+      }
+      content += result.content;
+    }
+  }
+
+  if (buffer.trim()) {
+    const result = readChatCompletionStreamLine(buffer);
+    content += result.content;
+  }
+
+  if (!content) {
+    throw new Error("SiliconFlow returned invalid chat completion response");
+  }
+
+  return content;
+}
+
+function readChatCompletionStreamLine(line: string): { done: boolean; content: string } {
+  const trimmed = line.trim();
+  if (!trimmed || !trimmed.startsWith("data:")) {
+    return { done: false, content: "" };
+  }
+
+  const payload = trimmed.slice("data:".length).trim();
+  if (payload === "[DONE]") {
+    return { done: true, content: "" };
+  }
+
+  let data: unknown;
+  try {
+    data = JSON.parse(payload);
+  } catch {
+    throw new Error("SiliconFlow returned invalid chat completion response");
+  }
+
+  const deltaContent = readString(data, ["choices", 0, "delta", "content"]);
+  const messageContent = readString(data, ["choices", 0, "message", "content"]);
+
+  return { done: false, content: deltaContent ?? messageContent ?? "" };
 }
 
 function createHttpErrorMessage(status: number, body: string, traceId?: string): string {

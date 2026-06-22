@@ -26,6 +26,20 @@ function errorResponse(status: number, body: string): Response {
   } as Response;
 }
 
+function streamResponse(chunks: string[]): Response {
+  return {
+    ok: true,
+    body: new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) {
+          controller.enqueue(new TextEncoder().encode(chunk));
+        }
+        controller.close();
+      }
+    })
+  } as Response;
+}
+
 function fetchResetError(): TypeError {
   return Object.assign(new TypeError("fetch failed"), {
     cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" })
@@ -68,6 +82,41 @@ describe("createSiliconFlowClient", () => {
           temperature: 0.4,
           response_format: { type: "json_object" },
           thinking_budget: 64
+        })
+      })
+    );
+  });
+
+  it("can stream chat completions and combine SSE delta content", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      streamResponse([
+        "data: {\"choices\":[{\"delta\":{\"content\":\"<!doctype html>\"}}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{\"content\":\"<html></html>\"}}]}\n\n",
+        "data: [DONE]\n\n"
+      ])
+    );
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    const content = await client.chatCompletion({
+      apiKey: "key",
+      modelName: "Pro/zai-org/GLM-5.2",
+      messages: [{ role: "user", content: "build html" }],
+      stream: true
+    } as Parameters<typeof client.chatCompletion>[0] & { stream: boolean });
+
+    expect(content).toBe("<!doctype html><html></html>");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.siliconflow.cn/v1/chat/completions",
+      expect.objectContaining({
+        body: JSON.stringify({
+          model: "Pro/zai-org/GLM-5.2",
+          messages: [{ role: "user", content: "build html" }],
+          stream: true,
+          max_tokens: undefined,
+          temperature: undefined,
+          response_format: undefined,
+          thinking_budget: undefined,
+          reasoning_effort: "max"
         })
       })
     );

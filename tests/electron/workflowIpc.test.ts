@@ -616,6 +616,7 @@ describe("registerWorkflowIpcHandlers", () => {
       thinkingBudget: 32768,
       reasoningEffort: "max",
       timeoutMs: 900_000,
+      stream: true,
       messages: expect.arrayContaining([
         expect.objectContaining({
           role: "user",
