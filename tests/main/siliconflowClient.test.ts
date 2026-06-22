@@ -496,6 +496,42 @@ describe("createSiliconFlowClient", () => {
     vi.useRealTimers();
   });
 
+  it("allows a chat request to override the default timeout for long generations", async () => {
+    vi.useFakeTimers();
+    let observedSignal: AbortSignal | undefined;
+    const fetchMock = vi.fn((_url: string | URL | Request, init?: RequestInit) => {
+      observedSignal = init?.signal ?? undefined;
+
+      return new Promise<Response>((_resolve, reject) => {
+        observedSignal?.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      });
+    });
+    const client = createSiliconFlowClient({
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      timeoutMs: 50
+    });
+
+    const request = client.chatCompletion({
+      apiKey: "key",
+      modelName: "Pro/zai-org/GLM-5.2",
+      messages: [{ role: "user", content: "build a complete html courseware" }],
+      timeoutMs: 500
+    } as Parameters<typeof client.chatCompletion>[0] & { timeoutMs: number }).catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(observedSignal?.aborted).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(450);
+    const error = await request;
+
+    expect(error).toBeInstanceOf(Error);
+    expect(observedSignal?.aborted).toBe(true);
+    vi.useRealTimers();
+  });
+
   it("rejects chat responses without first choice content", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ choices: [] }));
     const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });

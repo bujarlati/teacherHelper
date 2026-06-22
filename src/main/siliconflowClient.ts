@@ -46,6 +46,7 @@ type ChatCompletionInput = {
   responseFormat?: ResponseFormat;
   thinkingBudget?: number;
   reasoningEffort?: "high" | "max";
+  timeoutMs?: number;
 };
 
 type EmbeddingInput = {
@@ -109,12 +110,12 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
   const retryDelayMs = options.retryDelayMs ?? 750;
   const maxAttempts = 3;
 
-  async function requestJson(path: string, apiKey: string, init: RequestInit): Promise<unknown> {
+  async function requestJson(path: string, apiKey: string, init: RequestInit, requestTimeoutMs = timeoutMs): Promise<unknown> {
     let lastTransientError: unknown;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
-        return await requestJsonOnce(path, apiKey, init);
+        return await requestJsonOnce(path, apiKey, init, requestTimeoutMs);
       } catch (error) {
         const transientNetworkError = isTransientNetworkError(error);
         const transientHttpError = isTransientHttpError(error);
@@ -139,11 +140,11 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
     throw new Error(`SiliconFlow 网络请求中断，请稍后重试或检查网络/代理连接。原始错误：${getErrorMessage(lastTransientError)}`);
   }
 
-  async function requestJsonOnce(path: string, apiKey: string, init: RequestInit): Promise<unknown> {
+  async function requestJsonOnce(path: string, apiKey: string, init: RequestInit, requestTimeoutMs: number): Promise<unknown> {
     const controller = new AbortController();
     const timeout = setTimeout(() => {
       controller.abort();
-    }, timeoutMs);
+    }, requestTimeoutMs);
 
     try {
       const response = await fetchImpl(`${baseUrl}${path}`, {
@@ -198,7 +199,7 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
       const data = await requestJson("/chat/completions", input.apiKey, {
         method: "POST",
         body: JSON.stringify(body)
-      });
+      }, input.timeoutMs);
       const content = readString(data, ["choices", 0, "message", "content"]);
       if (!content) {
         throw new Error("SiliconFlow returned invalid chat completion response");
