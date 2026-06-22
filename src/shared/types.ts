@@ -10,6 +10,10 @@ export type QdrantConfig = {
   collectionPrefix: string;
 };
 
+export type DemoGenerationConfig = {
+  mode: "template" | "ai_html";
+};
+
 export type LocalQdrantStatus = {
   mode: "local" | "remote";
   status: "starting" | "running" | "stopped" | "missing" | "failed" | "remote";
@@ -28,6 +32,7 @@ export type AppSettings = {
   embeddingModel: ModelConfig;
   rerankerModel: ModelConfig;
   qdrant: QdrantConfig;
+  demoGeneration: DemoGenerationConfig;
 };
 
 export type KnowledgeConnectionTestResult = {

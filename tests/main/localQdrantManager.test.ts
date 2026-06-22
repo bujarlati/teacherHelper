@@ -23,6 +23,7 @@ const settings: AppSettings = {
   imageModel: { apiKey: "image-key", modelName: "Tongyi-MAI/Z-Image" },
   embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
   rerankerModel: { apiKey: "rerank-key", modelName: "Qwen/Qwen3-VL-Reranker-8B" },
+  demoGeneration: { mode: "template" },
   qdrant: { mode: "local", url: "http://127.0.0.1:6333", apiKey: "", collectionPrefix: "teacherhelper" }
 };
 

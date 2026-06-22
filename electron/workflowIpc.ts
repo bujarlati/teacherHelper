@@ -24,6 +24,17 @@ type DemoServer = {
   close(): Promise<void>;
 };
 
+type AiHtmlChatClient = {
+  chatCompletion(input: {
+    apiKey: string;
+    modelName: string;
+    messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+    maxTokens?: number;
+    temperature?: number;
+    thinkingBudget?: number;
+  }): Promise<string>;
+};
+
 type ConfigStoreLike = {
   load(): Promise<AppSettings>;
 };
@@ -497,12 +508,12 @@ async function generateDemo(
 ): Promise<{ response: { id: string; plan: ProblemDemoPlan; url: string }; activeDemoServer: DemoServer }> {
   const problem = nonEmptyStringSchema.parse(problemInput);
   const settings = await deps.configStore.load();
-  const plan = await deps.analyzeProblemForDemo({ problem, config: settings.textModel, client: deps.client });
-  const renderer = deps.chooseDemoRenderer(plan);
-  const html = renderDemoHtml(renderer, plan, deps);
   const id = deps.createId();
   const createdAt = deps.now();
   const demoDir = join(deps.dataDir, "demos", id);
+  const { plan, html } = settings.demoGeneration.mode === "ai_html"
+    ? await generateAiHtmlDemo(problem, settings, deps.client)
+    : await generateTemplateDemo(problem, settings, deps);
 
   await mkdir(demoDir, { recursive: true });
   await writeFile(join(demoDir, "index.html"), html, "utf8");
@@ -536,6 +547,73 @@ async function generateDemo(
 
     throw error;
   }
+}
+
+async function generateTemplateDemo(
+  problem: string,
+  settings: AppSettings,
+  deps: WorkflowDeps
+): Promise<{ plan: ProblemDemoPlan; html: string }> {
+  const plan = await deps.analyzeProblemForDemo({ problem, config: settings.textModel, client: deps.client });
+  const renderer = deps.chooseDemoRenderer(plan);
+
+  return {
+    plan,
+    html: renderDemoHtml(renderer, plan, deps)
+  };
+}
+
+async function generateAiHtmlDemo(
+  problem: string,
+  settings: AppSettings,
+  client: unknown
+): Promise<{ plan: ProblemDemoPlan; html: string }> {
+  const htmlClient = requireAiHtmlClient(client);
+  const rawHtml = await htmlClient.chatCompletion({
+    apiKey: settings.textModel.apiKey,
+    modelName: settings.textModel.modelName,
+    maxTokens: 12000,
+    temperature: 0.25,
+    thinkingBudget: 32768,
+    messages: [
+      {
+        role: "system",
+        content: [
+          "你是中国中小学数学老师、数学解题专家和前端交互课件设计师。",
+          "你需要先独立理解题目、判断最终要回答什么，再制作一个适合老师投屏讲解的单文件 HTML 互动网页。"
+        ].join("\n")
+      },
+      {
+        role: "user",
+        content: [
+          `题目：${problem}`,
+          "",
+          "请独立制作一个完整可交互 HTML 网页，不要使用固定模板字段，不要返回 JSON。",
+          "只返回完整 HTML 源码，可以包含 CSS 和 JavaScript，但必须全部内联在同一个文件里。",
+          "必须包含 <!doctype html>、<html>、<head>、<body>，不能引用外部 CDN、字体、图片或网络资源。",
+          "网页要先从题意、原理或生活场景引入，再一步步带学生分析，最后给出答案与验算。",
+          "请根据题目自行设计最合适的交互，可以使用步骤控制、拖拽、滑块、画笔、批注、可移动元素、动画或对照表。",
+          "动画必须做课堂压缩，不能让学生等待真实世界的长时间过程。",
+          "如果题目问的是距离、时间、速度、数量、商、余数或其它目标，最终答案必须严格回答题目所问。",
+          "界面使用中文，适合中小学课堂；图片或图形中不要写易错文字，关键文字请用 HTML 文本呈现。"
+        ].join("\n")
+      }
+    ]
+  });
+  const html = extractCompleteHtml(rawHtml);
+  const title = extractHtmlTitle(html) ?? "AI 自主题目演示";
+
+  return {
+    html,
+    plan: {
+      kind: "simple",
+      title,
+      originalProblem: problem,
+      knownValues: [],
+      target: "AI 独立生成可交互网页演示",
+      steps: ["AI 已独立完成教学设计和网页制作"]
+    }
+  };
 }
 
 async function openSavedDemo(
@@ -632,6 +710,51 @@ function renderDemoHtml(renderer: "motion" | "equation" | "simple", plan: Proble
   if (renderer === "equation") return deps.renderEquationDemoHtml(plan);
 
   return deps.renderSimpleDemoHtml(plan);
+}
+
+function requireAiHtmlClient(client: unknown): AiHtmlChatClient {
+  if (!isRecord(client) || typeof client.chatCompletion !== "function") {
+    throw new Error("文本模型客户端未初始化。");
+  }
+
+  return client as AiHtmlChatClient;
+}
+
+function extractCompleteHtml(raw: string): string {
+  const withoutFence = raw
+    .trim()
+    .replace(/^```(?:html)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  const htmlStart = withoutFence.search(/<!doctype html>|<html[\s>]/i);
+  const html = htmlStart >= 0 ? withoutFence.slice(htmlStart).trim() : withoutFence;
+  const normalizedHtml = /^<!doctype html>/i.test(html) ? html : `<!doctype html>\n${html}`;
+
+  if (!/<html[\s>]/i.test(normalizedHtml) || !/<\/html>/i.test(normalizedHtml)) {
+    throw new Error("AI 返回的网页 HTML 不完整，请重试。");
+  }
+
+  return normalizedHtml;
+}
+
+function extractHtmlTitle(html: string): string | undefined {
+  const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const title = match?.[1]
+    ?.replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return title || undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 async function writeCoursewareImageAssets(

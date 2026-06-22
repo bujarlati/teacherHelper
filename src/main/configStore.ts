@@ -22,7 +22,8 @@ function createEmptySettings(): AppSettings {
       url: defaultQdrantUrl,
       apiKey: "",
       collectionPrefix: defaultQdrantCollectionPrefix
-    }
+    },
+    demoGeneration: { mode: "template" }
   };
 }
 

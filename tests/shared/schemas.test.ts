@@ -211,12 +211,13 @@ describe("appSettingsSchema", () => {
     expect(parsed.imageModel.modelName).toBe(defaultImageModelName);
     expect(parsed.embeddingModel.modelName).toBe("Qwen/Qwen3-VL-Embedding-8B");
     expect(parsed.rerankerModel.modelName).toBe(defaultRerankerModelName);
+    expect(parsed.demoGeneration).toEqual({ mode: "template" });
     expect(parsed.qdrant.mode).toBe("remote");
     expect(parsed.qdrant.url).toBe("https://cluster.example.qdrant.io");
     expect(parsed.qdrant.collectionPrefix).toBe("teacherhelper");
   });
 
-  it("fills knowledge defaults for older settings files", () => {
+  it("fills knowledge and demo generation defaults for older settings files", () => {
     const parsed = appSettingsSchema.parse({
       textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
       videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" }
@@ -240,6 +241,7 @@ describe("appSettingsSchema", () => {
       apiKey: "",
       collectionPrefix: "teacherhelper"
     });
+    expect(parsed.demoGeneration).toEqual({ mode: "template" });
   });
 
   it("fills local qdrant mode for settings saved before local hosting", () => {
@@ -272,6 +274,16 @@ describe("appSettingsSchema", () => {
       apiKey: "rerank-key",
       modelName: "Qwen/Qwen3-VL-Reranker-8B"
     });
+  });
+
+  it("keeps explicit AI HTML demo generation settings when present", () => {
+    const parsed = appSettingsSchema.parse({
+      textModel: { apiKey: "text-key", modelName: "zai-org/GLM-5.2" },
+      videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
+      demoGeneration: { mode: "ai_html" }
+    });
+
+    expect(parsed.demoGeneration).toEqual({ mode: "ai_html" });
   });
 });
 

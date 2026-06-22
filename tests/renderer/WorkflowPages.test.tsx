@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { LessonPlan, ProblemDemoPlan, VideoTask } from "../../src/shared/types";
+import type { AppSettings, LessonPlan, ProblemDemoPlan, VideoTask } from "../../src/shared/types";
 import type { TextbookRecord, TextbookSearchResult } from "../../src/shared/types";
 import type { DemoRecord, LessonRecord, VideoRecord } from "../../src/main/historyStore";
 
@@ -66,6 +66,16 @@ const textbookSearchResult: TextbookSearchResult = {
   kind: "page",
   imagePath: "D:\\teacherHelper-data\\textbooks\\book-1\\pages\\page-002.png",
   imageDataUrl: "data:image/png;base64,AAA"
+};
+
+const appSettings: AppSettings = {
+  textModel: { apiKey: "text-key", modelName: "zai-org/GLM-5.2" },
+  videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
+  imageModel: { apiKey: "image-key", modelName: "Tongyi-MAI/Z-Image" },
+  embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+  rerankerModel: { apiKey: "rerank-key", modelName: "Qwen/Qwen3-VL-Reranker-8B" },
+  demoGeneration: { mode: "template" },
+  qdrant: { mode: "local", url: "http://127.0.0.1:6333", apiKey: "", collectionPrefix: "teacherhelper" }
 };
 
 describe("workflow pages", () => {
@@ -168,6 +178,30 @@ describe("workflow pages", () => {
 
     expect(await screen.findByText("# 一次函数复习", { exact: false })).toBeTruthy();
     expect(screen.getByText("教案已生成，本地教学演示生成失败：local preview failed")).toBeTruthy();
+  });
+
+  test("SettingsPage saves AI HTML demo generation mode", async () => {
+    window.teacherHelper.loadSettings = vi.fn().mockResolvedValue(appSettings);
+    window.teacherHelper.saveSettings = vi.fn().mockResolvedValue(undefined);
+    window.teacherHelper.getQdrantStatus = vi.fn().mockResolvedValue({
+      mode: "local",
+      status: "running",
+      url: "http://127.0.0.1:6333"
+    });
+    const { SettingsPage } = await import("../../src/renderer/pages/SettingsPage");
+
+    render(<SettingsPage />);
+
+    const modeSelect = await screen.findByLabelText("题目演示模式");
+    fireEvent.change(modeSelect, { target: { value: "ai_html" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
+
+    await waitFor(() => {
+      expect(window.teacherHelper.saveSettings).toHaveBeenCalledWith({
+        ...appSettings,
+        demoGeneration: { mode: "ai_html" }
+      });
+    });
   });
 
   test("LessonPage refines an existing lesson with the current markdown context", async () => {

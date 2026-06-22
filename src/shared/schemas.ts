@@ -18,6 +18,10 @@ export const qdrantConfigSchema = z.object({
   collectionPrefix: z.string().default(defaultQdrantCollectionPrefix)
 });
 
+export const demoGenerationConfigSchema = z.object({
+  mode: z.enum(["template", "ai_html"]).default("template")
+});
+
 export const appSettingsSchema = z.object({
   textModel: modelConfigSchema,
   videoModel: modelConfigSchema,
@@ -38,6 +42,9 @@ export const appSettingsSchema = z.object({
     url: defaultQdrantUrl,
     apiKey: "",
     collectionPrefix: defaultQdrantCollectionPrefix
+  }),
+  demoGeneration: demoGenerationConfigSchema.default({
+    mode: "template"
   })
 });
 

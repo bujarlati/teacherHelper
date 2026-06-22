@@ -24,6 +24,9 @@ const storedSettings: AppSettings = {
     apiKey: "rerank-key",
     modelName: "Qwen/Qwen3-VL-Reranker-8B"
   },
+  demoGeneration: {
+    mode: "template"
+  },
   qdrant: {
     mode: "local",
     url: "http://127.0.0.1:6333",
@@ -123,6 +126,9 @@ describe("SettingsPage", () => {
           apiKey: "rerank-key",
           modelName: "updated-reranker-model"
         },
+        demoGeneration: {
+          mode: "template"
+        },
         qdrant: {
           mode: "local",
           url: "http://127.0.0.1:6333",
@@ -148,6 +154,7 @@ describe("SettingsPage", () => {
     expect(screen.getByLabelText("嵌入模型名")).toHaveProperty("value", "Qwen/Qwen3-VL-Embedding-8B");
     expect(screen.getByLabelText("重排序 API Key")).toHaveProperty("value", "");
     expect(screen.getByLabelText("重排序模型名")).toHaveProperty("value", "Qwen/Qwen3-VL-Reranker-8B");
+    expect(screen.getByLabelText("题目演示模式")).toHaveProperty("value", "template");
     expect(screen.getByLabelText("Qdrant 模式")).toHaveProperty("value", "local");
     expect(screen.getByLabelText("Qdrant 地址")).toHaveProperty("value", "http://127.0.0.1:6333");
     expect(screen.getByLabelText("Qdrant API Key")).toHaveProperty("value", "");

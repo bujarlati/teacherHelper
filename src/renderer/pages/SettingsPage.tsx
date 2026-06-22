@@ -37,6 +37,9 @@ function createEmptySettings(): AppSettings {
       url: defaultQdrantUrl,
       apiKey: "",
       collectionPrefix: defaultQdrantCollectionPrefix
+    },
+    demoGeneration: {
+      mode: "template"
     }
   };
 }
@@ -178,6 +181,26 @@ export function SettingsPage(): ReactElement {
                 textModel: { ...settings.textModel, modelName: event.target.value }
               })}
             />
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>题目演示</legend>
+          <label>
+            <span>题目演示模式</span>
+            <select
+              disabled={controlsDisabled}
+              value={settings.demoGeneration.mode}
+              onChange={(event) => setSettings({
+                ...settings,
+                demoGeneration: {
+                  mode: event.target.value === "ai_html" ? "ai_html" : "template"
+                }
+              })}
+            >
+              <option value="template">稳定模板生成</option>
+              <option value="ai_html">AI 独立生成完整网页</option>
+            </select>
           </label>
         </fieldset>
 

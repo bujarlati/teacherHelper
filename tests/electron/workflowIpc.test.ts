@@ -107,6 +107,7 @@ const completeSettings: AppSettings = {
   imageModel: { apiKey: "image-key", modelName: "Tongyi-MAI/Z-Image" },
   embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
   rerankerModel: { apiKey: "rerank-key", modelName: "Qwen/Qwen3-VL-Reranker-8B" },
+  demoGeneration: { mode: "template" },
   qdrant: { mode: "local", url: "http://127.0.0.1:6333", apiKey: "", collectionPrefix: "teacherhelper" }
 };
 
@@ -561,6 +562,86 @@ describe("registerWorkflowIpcHandlers", () => {
       problem: "小明买笔",
       kind: "equation",
       demoPath: join(tmpDir, "demos", "demo-1"),
+      createdAt
+    }]);
+  });
+
+  it("lets AI generate the entire problem demo HTML when AI HTML mode is enabled", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const addedDemos: DemoRecord[] = [];
+    const closeActiveServer = vi.fn().mockResolvedValue(undefined);
+    const openExternal = vi.fn().mockResolvedValue(undefined);
+    const createdAt = "2026-06-15T02:03:04.000Z";
+    const aiHtml = "<!doctype html><html><head><title>AI 自主题目演示</title></head><body><button id=\"start\">开始互动</button><script>document.body.dataset.ready='1';</script></body></html>";
+    const client = {
+      chatCompletion: vi.fn().mockResolvedValue(`\`\`\`html\n${aiHtml}\n\`\`\``)
+    };
+    const analyzeProblemForDemo = vi.fn().mockResolvedValue(demoPlan);
+    const renderEquationDemoHtml = vi.fn().mockReturnValue("<!doctype html><title>template</title>");
+
+    registerWorkflowIpcHandlers(fakeIpcMain, {
+      configStore: { load: vi.fn().mockResolvedValue({ ...completeSettings, demoGeneration: { mode: "ai_html" } }) },
+      historyStore: {
+        addLesson: vi.fn(),
+        addDemo: async (record) => { addedDemos.push(record); },
+        upsertVideo: vi.fn(),
+        listLessons: vi.fn(),
+        listDemos: vi.fn(),
+        listVideos: vi.fn()
+      },
+      dataDir: tmpDir,
+      client,
+      createId: () => "ai-demo-1",
+      now: () => createdAt,
+      generateLessonPlan: vi.fn(),
+      createVideoTaskFromLesson: vi.fn(),
+      refreshVideoTaskStatus: vi.fn(),
+      analyzeProblemForDemo,
+      chooseDemoRenderer: vi.fn().mockReturnValue("equation"),
+      renderMotionDemoHtml: vi.fn(),
+      renderEquationDemoHtml,
+      renderSimpleDemoHtml: vi.fn(),
+      renderTeachingDemoHtml: vi.fn(),
+      startDemoServer: vi.fn().mockResolvedValue({ url: "http://127.0.0.1:4321/", close: closeActiveServer }),
+      openExternal,
+      exportLessonDocx: vi.fn()
+    });
+
+    const result = await fakeIpcMain.handlers.get("demo:generate")?.({}, " 小强把除数写错，求正确商 ");
+
+    expect(client.chatCompletion).toHaveBeenCalledWith(expect.objectContaining({
+      apiKey: "text-key",
+      modelName: "text-model",
+      maxTokens: 12000,
+      thinkingBudget: 32768,
+      messages: expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          content: expect.stringContaining("请独立制作一个完整可交互 HTML 网页")
+        })
+      ])
+    }));
+    expect(analyzeProblemForDemo).not.toHaveBeenCalled();
+    expect(renderEquationDemoHtml).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      id: "ai-demo-1",
+      plan: {
+        kind: "simple",
+        title: "AI 自主题目演示",
+        originalProblem: "小强把除数写错，求正确商",
+        knownValues: [],
+        target: "AI 独立生成可交互网页演示",
+        steps: ["AI 已独立完成教学设计和网页制作"]
+      },
+      url: "http://127.0.0.1:4321/"
+    });
+    await expect(readFile(join(tmpDir, "demos", "ai-demo-1", "index.html"), "utf8")).resolves.toBe(aiHtml);
+    expect(addedDemos).toEqual([{
+      id: "ai-demo-1",
+      title: "AI 自主题目演示",
+      problem: "小强把除数写错，求正确商",
+      kind: "simple",
+      demoPath: join(tmpDir, "demos", "ai-demo-1"),
       createdAt
     }]);
   });
