@@ -58,6 +58,37 @@ describe("renderMotionDemoHtml", () => {
     expect(html).toContain("500 秒");
   });
 
+  it("renders distance as the answer when the motion target asks for distance", () => {
+    const html = renderMotionDemoHtml(
+      motionPlan({
+        title: "汽车往返甲乙两地的行程问题",
+        originalProblem: "汽车从甲地到乙地，去时每小时行60千米，比计划时间早到1小时；返回时，每小时行40千米，比计划时间迟到1小时。求甲乙两地的距离。",
+        knownValues: [
+          { label: "去时速度", value: 60, unit: "千米/时" },
+          { label: "返回速度", value: 40, unit: "千米/时" }
+        ],
+        target: "求甲乙两地的距离",
+        steps: [
+          "去时用时比返回少 2 小时",
+          "设距离为 S，列式 S/40 - S/60 = 2",
+          "求出 S = 240 千米"
+        ],
+        motion: {
+          startLabel: "甲地",
+          endLabel: "乙地",
+          distance: 240,
+          distanceUnit: "千米",
+          speed: 60,
+          speedUnit: "千米/时",
+          answerSeconds: 14400
+        }
+      })
+    );
+
+    expect(html).toContain("<strong>答案：</strong>240 千米");
+    expect(html).not.toContain("<strong>答案：</strong>14400 秒");
+  });
+
   it("throws when motion data is missing", () => {
     const plan = motionPlan({ motion: undefined });
 
@@ -92,23 +123,24 @@ describe("renderMotionDemoHtml", () => {
     expect(html).toContain('id="track"');
   });
 
-  it("uses fractional answer seconds as the animation duration", () => {
+  it("uses a classroom playback duration instead of the real travel seconds", () => {
     const html = renderMotionDemoHtml(
       motionPlan({
         motion: {
           startLabel: "起点",
           endLabel: "终点",
-          distance: 1,
-          distanceUnit: "m",
-          speed: 2,
-          speedUnit: "m/s",
-          answerSeconds: 0.5
+          distance: 240,
+          distanceUnit: "千米",
+          speed: 60,
+          speedUnit: "千米/时",
+          answerSeconds: 14400
         }
       })
     );
 
-    expect(html).toContain("const totalSeconds = 0.5;");
-    expect(html).not.toContain("const totalSeconds = 1;");
+    expect(html).toContain("const playbackSeconds = 6;");
+    expect(html).toContain("const realSeconds = 14400;");
+    expect(html).not.toContain("const totalSeconds = 14400;");
   });
 
   it("runs generated playback controls in the browser script", () => {
@@ -159,20 +191,20 @@ describe("renderMotionDemoHtml", () => {
     const pause = document.getElementById("pause");
     const replay = document.getElementById("replay");
 
-    expect(timer?.textContent).toBe("计时：0.0 秒");
+    expect(timer?.textContent).toBe("演示：0.0 秒");
     expect(walker?.style.transform).toBe("translateX(0px)");
 
     start?.click();
-    now = 250;
+    now = 3000;
     frames.shift()?.(now);
 
-    expect(timer?.textContent).toBe("计时：0.3 秒");
+    expect(timer?.textContent).toBe("演示：3.0 秒");
     expect(walker?.style.transform).toBe("translateX(48px)");
 
     pause?.click();
     replay?.click();
 
-    expect(timer?.textContent).toBe("计时：0.0 秒");
+    expect(timer?.textContent).toBe("演示：0.0 秒");
     expect(walker?.style.transform).toBe("translateX(0px)");
   });
 });

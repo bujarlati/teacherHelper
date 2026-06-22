@@ -118,6 +118,36 @@ describe("problemDemoPlanSchema", () => {
 
     expect(parsed.motion?.answerSeconds).toBe(500);
   });
+
+  it("preserves motion answer target metadata for distance problems", () => {
+    const parsed = problemDemoPlanSchema.parse({
+      kind: "motion",
+      title: "往返行程问题",
+      originalProblem: "汽车往返甲乙两地，求两地距离。",
+      knownValues: [
+        { label: "去时速度", value: 60, unit: "千米/时" },
+        { label: "返回速度", value: 40, unit: "千米/时" }
+      ],
+      target: "求甲乙两地的距离",
+      steps: ["设距离为 S", "S/40 - S/60 = 2", "S = 240"],
+      motion: {
+        startLabel: "甲地",
+        endLabel: "乙地",
+        distance: 240,
+        distanceUnit: "千米",
+        speed: 60,
+        speedUnit: "千米/时",
+        answerSeconds: 14400,
+        targetQuantity: "distance",
+        answerValue: 240,
+        answerUnit: "千米"
+      }
+    });
+
+    expect(parsed.motion?.targetQuantity).toBe("distance");
+    expect(parsed.motion?.answerValue).toBe(240);
+    expect(parsed.motion?.answerUnit).toBe("千米");
+  });
 });
 
 describe("modelConfigSchema", () => {

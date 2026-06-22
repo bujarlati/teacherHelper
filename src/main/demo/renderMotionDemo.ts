@@ -13,7 +13,10 @@ export function renderMotionDemoHtml(plan: ProblemDemoPlan): string {
     })
     .join("");
   const steps = plan.steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("");
-  const duration = motion.answerSeconds;
+  const answer = createMotionAnswer(plan);
+  const playbackSeconds = 6;
+  const realTimeLabel = formatDuration(motion.answerSeconds);
+  const sceneActor = inferSceneActor(plan.originalProblem);
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -157,6 +160,12 @@ export function renderMotionDemoHtml(plan: ProblemDemoPlan): string {
       color: #0f766e;
     }
 
+    .time-note {
+      color: #59677d;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
     .controls {
       display: flex;
       flex-wrap: wrap;
@@ -203,16 +212,19 @@ export function renderMotionDemoHtml(plan: ProblemDemoPlan): string {
     </section>
 
     <section class="panel scene" aria-labelledby="motion-scene-title">
-      <h2 id="motion-scene-title">小明沿轨道移动</h2>
+      <h2 id="motion-scene-title">${escapeHtml(sceneActor)}沿轨道移动</h2>
       <div class="labels">
         <span>${escapeHtml(motion.startLabel)}</span>
         <span>${escapeHtml(motion.endLabel)}</span>
       </div>
       <div id="track" class="track">
-        <div id="walker" class="walker">小明</div>
+        <div id="walker" class="walker">${escapeHtml(sceneActor)}</div>
       </div>
       <div class="metrics">
-        <div id="timer" class="timer">计时：0.0 秒</div>
+        <div>
+          <div id="timer" class="timer">演示：0.0 秒</div>
+          <div class="time-note">真实用时：${escapeHtml(realTimeLabel)}，课堂演示压缩为 ${escapeHtml(String(playbackSeconds))} 秒。</div>
+        </div>
         <div class="controls">
           <button id="start" class="primary" type="button">开始</button>
           <button id="pause" type="button">暂停</button>
@@ -226,12 +238,13 @@ export function renderMotionDemoHtml(plan: ProblemDemoPlan): string {
       <ol class="steps">
         ${steps}
       </ol>
-      <p><strong>答案：</strong>${escapeHtml(String(motion.answerSeconds))} 秒</p>
+      <p><strong>答案：</strong>${escapeHtml(answer)}</p>
     </section>
   </main>
 
   <script>
-    const totalSeconds = ${JSON.stringify(duration)};
+    const playbackSeconds = ${JSON.stringify(playbackSeconds)};
+    const realSeconds = ${JSON.stringify(motion.answerSeconds)};
     const timer = document.getElementById("timer");
     const walker = document.getElementById("walker");
     const track = document.getElementById("track");
@@ -248,15 +261,15 @@ export function renderMotionDemoHtml(plan: ProblemDemoPlan): string {
     }
 
     function render() {
-      const progress = Math.min(elapsed / totalSeconds, 1);
-      timer.textContent = "计时：" + elapsed.toFixed(1) + " 秒";
+      const progress = Math.min(elapsed / playbackSeconds, 1);
+      timer.textContent = "演示：" + elapsed.toFixed(1) + " 秒";
       walker.style.transform = "translateX(" + Math.round(progress * maxTravel()) + "px)";
     }
 
     function tick(now) {
-      elapsed = Math.min((now - startedAt) / 1000, totalSeconds);
+      elapsed = Math.min((now - startedAt) / 1000, playbackSeconds);
       render();
-      if (elapsed < totalSeconds && running) {
+      if (elapsed < playbackSeconds && running) {
         frameId = requestAnimationFrame(tick);
       } else {
         running = false;
@@ -288,6 +301,83 @@ export function renderMotionDemoHtml(plan: ProblemDemoPlan): string {
   </script>
 </body>
 </html>`;
+}
+
+function createMotionAnswer(plan: ProblemDemoPlan): string {
+  const motion = plan.motion;
+  if (!motion) {
+    return "";
+  }
+
+  if (motion.answerValue !== undefined && motion.answerUnit?.trim()) {
+    return formatQuantity(motion.answerValue, motion.answerUnit);
+  }
+
+  const target = motion.targetQuantity ?? inferMotionTarget(plan.target);
+  if (target === "distance") {
+    return formatQuantity(motion.distance, motion.distanceUnit);
+  }
+
+  if (target === "speed") {
+    return formatQuantity(motion.speed, motion.speedUnit);
+  }
+
+  return formatQuantity(formatNumber(motion.answerSeconds), "秒");
+}
+
+function inferMotionTarget(target: string): "time" | "distance" | "speed" {
+  if (/距离|路程|相距|间距/.test(target)) {
+    return "distance";
+  }
+
+  if (/速度|每小时|每秒|速率/.test(target)) {
+    return "speed";
+  }
+
+  return "time";
+}
+
+function inferSceneActor(problem: string): string {
+  if (/汽车|车|客车|货车|小车/.test(problem)) {
+    return "汽车";
+  }
+
+  if (/船/.test(problem)) {
+    return "小船";
+  }
+
+  if (/飞机/.test(problem)) {
+    return "飞机";
+  }
+
+  return "小明";
+}
+
+function formatQuantity(value: number | string, unit: string): string {
+  const displayValue = typeof value === "number" ? formatNumber(value) : value.trim();
+  const displayUnit = unit.trim();
+
+  return displayUnit ? `${displayValue} ${displayUnit}` : displayValue;
+}
+
+function formatNumber(value: number): string {
+  if (Number.isInteger(value)) {
+    return String(value);
+  }
+
+  return String(Number(value.toFixed(2)));
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds >= 3600 && seconds % 3600 === 0) {
+    return `${formatNumber(seconds / 3600)} 小时（${formatNumber(seconds)} 秒）`;
+  }
+
+  if (seconds >= 60 && seconds % 60 === 0) {
+    return `${formatNumber(seconds / 60)} 分钟（${formatNumber(seconds)} 秒）`;
+  }
+
+  return `${formatNumber(seconds)} 秒`;
 }
 
 function escapeHtml(value: string): string {
