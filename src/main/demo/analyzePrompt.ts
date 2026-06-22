@@ -11,7 +11,7 @@ export function buildAnalyzeProblemPrompt(problem: string) {
         "knownValues 可以为空数组，steps 至少给 3 个可课堂展示的步骤。",
         "kind 为 motion 时必须包含 motion：startLabel, endLabel, distance, distanceUnit, speed, speedUnit, answerSeconds。",
         "kind 为 equation 时必须包含 equation：variable, relationship, expression, solution, verification。",
-        "无法完整填写 motion 或 equation 时，把 kind 改为 simple，不要返回缺少专用字段的 motion 或 equation。"
+        "不能为了省字段把适合 motion 或 equation 的题目改成 simple；适合专用演示时必须补齐专用字段。"
       ].join("\n")
     },
     {

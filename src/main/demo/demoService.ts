@@ -7,13 +7,30 @@ type AnalyzeClient = {
   chatCompletion(input: {
     apiKey: string;
     modelName: string;
-    messages: ReturnType<typeof buildAnalyzeProblemPrompt>;
+    messages: AnalyzeMessage[];
     maxTokens?: number;
     temperature?: number;
     responseFormat?: { type: "json_object" };
     thinkingBudget?: number;
   }): Promise<string>;
 };
+
+type AnalyzeMessage = ReturnType<typeof buildAnalyzeProblemPrompt>[number];
+
+type ParseFailure = {
+  kind: "json" | "schema";
+  message: string;
+  fields: string[];
+  raw: string;
+};
+
+type ParseResult =
+  | { ok: true; plan: ProblemDemoPlan }
+  | { ok: false; failure: ParseFailure };
+
+const maxAnalyzeAttempts = 3;
+const analyzeMaxTokens = 3200;
+const analyzeThinkingBudget = 128;
 
 export { buildAnalyzeProblemPrompt };
 
@@ -26,17 +43,30 @@ export async function analyzeProblemForDemo(input: {
     throw new Error("文本模型配置不完整，请先在设置页填写 API Key 和模型名。");
   }
 
-  const raw = await input.client.chatCompletion({
-    apiKey: input.config.apiKey,
-    modelName: input.config.modelName,
-    messages: buildAnalyzeProblemPrompt(input.problem),
-    maxTokens: 1800,
-    temperature: 0.2,
-    responseFormat: { type: "json_object" },
-    thinkingBudget: 64
-  });
+  let messages: AnalyzeMessage[] = buildAnalyzeProblemPrompt(input.problem);
+  let lastFailure: ParseFailure | undefined;
 
-  return parseProblemDemoPlan(parseProblemDemoJson(stripCodeFence(raw)), input.problem);
+  for (let attempt = 1; attempt <= maxAnalyzeAttempts; attempt += 1) {
+    const raw = await input.client.chatCompletion({
+      apiKey: input.config.apiKey,
+      modelName: input.config.modelName,
+      messages,
+      maxTokens: analyzeMaxTokens,
+      temperature: 0.15,
+      responseFormat: { type: "json_object" },
+      thinkingBudget: analyzeThinkingBudget
+    });
+    const parsed = parseProblemDemoPlan(raw);
+
+    if (parsed.ok) {
+      return parsed.plan;
+    }
+
+    lastFailure = parsed.failure;
+    messages = buildRepairPromptMessages(input.problem, parsed.failure, attempt + 1);
+  }
+
+  throw createFinalParseError(lastFailure);
 }
 
 export function chooseDemoRenderer(plan: ProblemDemoPlan): "motion" | "equation" | "simple" {
@@ -60,172 +90,88 @@ function parseProblemDemoJson(value: string): unknown {
   }
 }
 
-function parseProblemDemoPlan(value: unknown, problem: string): ProblemDemoPlan {
+function parseProblemDemoPlan(raw: string): ParseResult {
+  let value: unknown;
   try {
-    return problemDemoPlanSchema.parse(normalizeProblemDemoPlan(value, problem));
+    value = parseProblemDemoJson(stripCodeFence(raw));
   } catch (error) {
-    if (error instanceof ZodError) {
-      throw new Error("模型返回的题目演示结构不完整，请重试。");
+    return {
+      ok: false,
+      failure: {
+        kind: "json",
+        message: getErrorMessage(error, "模型返回的题目演示 JSON 无法解析，请重试。"),
+        fields: ["JSON"],
+        raw
+      }
+    };
+  }
+
+  const result = problemDemoPlanSchema.safeParse(value);
+  if (result.success) {
+    return { ok: true, plan: result.data };
+  }
+
+  return {
+    ok: false,
+    failure: {
+      kind: "schema",
+      message: "模型返回的题目演示结构不完整，请重试。",
+      fields: collectProblemFields(result.error),
+      raw
     }
-
-    throw error;
-  }
-}
-
-function normalizeProblemDemoPlan(value: unknown, problem: string): unknown {
-  if (!isRecord(value)) {
-    return value;
-  }
-
-  const kind = normalizeKind(value.kind);
-  const basePlan = {
-    kind,
-    title: normalizeString(value.title, createFallbackTitle(problem)),
-    originalProblem: normalizeString(value.originalProblem, problem.trim() || "用户输入题目"),
-    knownValues: normalizeKnownValues(value.knownValues),
-    target: normalizeString(value.target, "求解题目中的问题"),
-    steps: normalizeSteps(value.steps)
   };
-
-  if (kind === "motion") {
-    const motion = normalizeMotion(value.motion);
-    return motion ? { ...basePlan, motion } : { ...basePlan, kind: "simple" };
-  }
-
-  if (kind === "equation") {
-    const equation = normalizeEquation(value.equation);
-    return equation ? { ...basePlan, equation } : { ...basePlan, kind: "simple" };
-  }
-
-  return basePlan;
 }
 
-function normalizeKind(value: unknown): ProblemDemoPlan["kind"] {
-  if (
-    value === "motion"
-    || value === "equation"
-    || value === "engineering"
-    || value === "geometry"
-    || value === "simple"
-  ) {
-    return value;
-  }
-
-  return "simple";
+function buildRepairPromptMessages(problem: string, failure: ParseFailure, attempt: number): AnalyzeMessage[] {
+  return [
+    ...buildAnalyzeProblemPrompt(problem),
+    {
+      role: "user" as const,
+      content: [
+        `上一次返回不符合题目演示 JSON 结构，这是第 ${attempt} 次生成。`,
+        failure.kind === "json" ? "错误类型：JSON 无法解析。" : "错误类型：结构字段不完整。",
+        failure.fields.length > 0 ? `问题字段：${failure.fields.join("、")}` : "",
+        "请重新生成完整 JSON，必须严格满足以下要求：",
+        "1. 顶层必须包含 kind, title, originalProblem, knownValues, target, steps。",
+        "2. knownValues 必须是数组；没有明确数值时返回空数组。",
+        "3. steps 至少给 3 个适合课堂展示的步骤。",
+        "4. kind 为 motion 时必须完整填写 motion.startLabel, motion.endLabel, motion.distance, motion.distanceUnit, motion.speed, motion.speedUnit, motion.answerSeconds。",
+        "5. kind 为 equation 时必须完整填写 equation.variable, equation.relationship, equation.expression, equation.solution, equation.verification。",
+        "6. 不能为了省字段把适合 motion 或 equation 的题目改成 simple；用更多 token 补齐字段。",
+        "7. 只返回 JSON，不要 Markdown，不要解释。",
+        `上一次返回内容：${truncateRawResponse(failure.raw)}`
+      ].filter(Boolean).join("\n")
+    }
+  ];
 }
 
-function normalizeKnownValues(value: unknown): ProblemDemoPlan["knownValues"] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.flatMap((item) => {
-    if (!isRecord(item)) {
-      return [];
-    }
-
-    const label = normalizeString(item.label, "");
-    const rawValue = normalizeKnownValue(item.value);
-    if (!label || rawValue === undefined) {
-      return [];
-    }
-
-    return [{
-      label,
-      value: rawValue,
-      ...(typeof item.unit === "string" && item.unit.trim() ? { unit: item.unit.trim() } : {})
-    }];
+function collectProblemFields(error: ZodError): string[] {
+  const fields = error.issues.map((issue) => {
+    const path = issue.path.join(".");
+    return path || issue.message;
   });
+
+  return [...new Set(fields)];
 }
 
-function normalizeKnownValue(value: unknown): number | string | undefined {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
+function createFinalParseError(failure: ParseFailure | undefined): Error {
+  if (!failure || failure.kind === "schema") {
+    const fields = failure?.fields.length ? `（问题字段：${failure.fields.join("、")}）` : "";
+    return new Error(`模型连续 ${maxAnalyzeAttempts} 次未返回完整题目演示结构${fields}，请重试。`);
   }
 
-  if (typeof value === "string" && value.trim()) {
-    return value.trim();
+  return new Error(`模型连续 ${maxAnalyzeAttempts} 次未返回可解析的题目演示 JSON，请重试。`);
+}
+
+function truncateRawResponse(value: string): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  return compact.length > 1200 ? `${compact.slice(0, 1200)}...` : compact;
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
   }
 
-  return undefined;
-}
-
-function normalizeSteps(value: unknown): string[] {
-  const steps = Array.isArray(value)
-    ? value.map((item) => normalizeString(item, "")).filter(Boolean)
-    : typeof value === "string"
-      ? [value.trim()].filter(Boolean)
-      : [];
-
-  return steps.length > 0
-    ? steps
-    : [
-      "阅读题目，找出已知条件和要求的问题。",
-      "用图示或分步提示整理数量关系。",
-      "逐步计算，并把结果代回题目检查。"
-    ];
-}
-
-function normalizeMotion(value: unknown): ProblemDemoPlan["motion"] | undefined {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  const distance = normalizePositiveNumber(value.distance);
-  const speed = normalizePositiveNumber(value.speed);
-  const answerSeconds = normalizePositiveNumber(value.answerSeconds);
-  if (distance === undefined || speed === undefined || answerSeconds === undefined) {
-    return undefined;
-  }
-
-  return {
-    startLabel: normalizeString(value.startLabel, "起点"),
-    endLabel: normalizeString(value.endLabel, "终点"),
-    distance,
-    distanceUnit: normalizeString(value.distanceUnit, "米"),
-    speed,
-    speedUnit: normalizeString(value.speedUnit, "米/秒"),
-    answerSeconds
-  };
-}
-
-function normalizeEquation(value: unknown): ProblemDemoPlan["equation"] | undefined {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  const variable = normalizeString(value.variable, "");
-  const relationship = normalizeString(value.relationship, "");
-  const expression = normalizeString(value.expression, "");
-  const solution = normalizeString(value.solution, "");
-  const verification = normalizeString(value.verification, "");
-  if (!variable || !relationship || !expression || !solution || !verification) {
-    return undefined;
-  }
-
-  return {
-    variable,
-    relationship,
-    expression,
-    solution,
-    verification
-  };
-}
-
-function normalizePositiveNumber(value: unknown): number | undefined {
-  const numberValue = typeof value === "number" ? value : typeof value === "string" ? Number(value.trim()) : NaN;
-  return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : undefined;
-}
-
-function normalizeString(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.trim() ? value.trim() : fallback;
-}
-
-function createFallbackTitle(problem: string): string {
-  const compact = problem.replace(/\s+/g, " ").trim();
-  return compact ? compact.slice(0, 40) : "题目演示";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return fallback;
 }
