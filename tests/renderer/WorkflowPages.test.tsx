@@ -265,6 +265,74 @@ describe("workflow pages", () => {
     expect(screen.getByText("演示已生成并打开。")).toBeTruthy();
   });
 
+  test("DemoPage shows progress while generating a demo", async () => {
+    vi.useFakeTimers();
+    window.teacherHelper.generateDemo = vi.fn().mockReturnValue(new Promise(() => undefined));
+    window.teacherHelper.listHistory = vi.fn().mockResolvedValue({ lessons: [], demos: [], videos: [] });
+    const { DemoPage } = await import("../../src/renderer/pages/DemoPage");
+
+    render(<DemoPage />);
+
+    fireEvent.change(screen.getByLabelText("题目"), { target: { value: "甲乙合作。" } });
+    fireEvent.click(screen.getByRole("button", { name: "生成演示" }));
+
+    expect(screen.getByRole("progressbar", { name: "题目演示生成进度" })).toBeTruthy();
+    expect(screen.getByText("准备分析题目")).toBeTruthy();
+    expect(screen.getByText("已等待 0 秒")).toBeTruthy();
+
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(screen.getByText("等待模型生成演示方案")).toBeTruthy();
+    expect(screen.getByText("已等待 6 秒")).toBeTruthy();
+
+    await vi.advanceTimersByTimeAsync(24000);
+    expect(screen.getByText("正在生成可交互网页，复杂题目可能需要 1 到 3 分钟。")).toBeTruthy();
+    vi.useRealTimers();
+  });
+
+  test("DemoPage lists recent demo history and refreshes it after generation", async () => {
+    const existingDemo: DemoRecord = {
+      id: "old-demo",
+      title: "旧演示",
+      problem: "旧题目",
+      kind: "simple",
+      demoPath: "D:\\demos\\old-demo",
+      createdAt: "2026-06-15T01:02:03.000Z"
+    };
+    const generatedDemo: DemoRecord = {
+      id: "demo-1",
+      title: "工程题演示",
+      problem: "甲乙合作。",
+      kind: "simple",
+      demoPath: "D:\\demos\\demo-1",
+      createdAt: "2026-06-15T02:03:04.000Z"
+    };
+    window.teacherHelper.listHistory = vi.fn()
+      .mockResolvedValueOnce({ lessons: [], demos: [existingDemo], videos: [] })
+      .mockResolvedValueOnce({ lessons: [], demos: [generatedDemo, existingDemo], videos: [] });
+    window.teacherHelper.openDemo = vi.fn().mockResolvedValue("http://127.0.0.1:5000/");
+    const { DemoPage } = await import("../../src/renderer/pages/DemoPage");
+
+    render(<DemoPage />);
+
+    expect(await screen.findByText("旧演示")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("题目"), { target: { value: "甲乙合作。" } });
+    fireEvent.click(screen.getByRole("button", { name: "生成演示" }));
+
+    await waitFor(() => {
+      expect(window.teacherHelper.listHistory).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText("工程题演示")).toHaveLength(2);
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "打开演示" })[0]);
+
+    await waitFor(() => {
+      expect(window.teacherHelper.openDemo).toHaveBeenCalledWith("demo-1");
+    });
+    expect(await screen.findByText("历史演示已打开：http://127.0.0.1:5000/")).toBeTruthy();
+  });
+
   test("DemoPage refines an existing demo with the current plan context", async () => {
     const updatedPlan: ProblemDemoPlan = {
       ...demoPlan,
