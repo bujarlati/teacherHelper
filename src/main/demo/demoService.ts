@@ -135,11 +135,12 @@ function buildRepairPromptMessages(problem: string, failure: ParseFailure, attem
         "1. 顶层必须包含 kind, title, originalProblem, knownValues, target, steps。",
         "2. knownValues 必须是数组；没有明确数值时返回空数组。",
         "3. steps 必须是字符串数组，每一项是一句完整步骤；例如 [\"先设未知数 x\", \"再列方程 2x - 4 = 12\", \"最后解得 x = 8\"]；不要返回 {title, description} 对象数组。",
-        "4. kind 为 motion 时必须完整填写 motion.startLabel, motion.endLabel, motion.distance, motion.distanceUnit, motion.speed, motion.speedUnit, motion.answerSeconds, motion.targetQuantity, motion.answerValue, motion.answerUnit。",
-        "5. motion.targetQuantity 必须按题目所求填写 time、distance 或 speed；求两地距离/路程时 answerValue 是距离数值，answerUnit 是距离单位，不能把实际用时秒数当答案。",
-        "6. kind 为 equation 时必须完整填写 equation.variable, equation.relationship, equation.expression, equation.solution, equation.verification。",
-        "7. 不能为了省字段把适合 motion 或 equation 的题目改成 simple；用更多 token 补齐字段。",
-        "8. 只返回 JSON，不要 Markdown，不要解释。",
+        "4. kind 为 motion 时必须完整填写 motion.startLabel, motion.endLabel, motion.distance, motion.distanceUnit, motion.speed, motion.speedUnit, motion.answerSeconds, motion.targetQuantity, motion.answerLabel, motion.answerValue, motion.answerUnit。",
+        "5. motion.targetQuantity 和 answerLabel 必须用自然语言写出题目最终所求，例如“甲乙两地距离”“相遇地点距离甲地”“实际比计划提前的时间”；不要限制为 time/distance/speed。",
+        "6. motion.answerValue 和 answerUnit 必须对应题目最终所求；辅助动画需要的实际用时放在 answerSeconds，不能把辅助用时当最终答案。",
+        "7. kind 为 equation 时必须完整填写 equation.variable, equation.relationship, equation.expression, equation.solution, equation.verification。",
+        "8. 不能为了省字段把适合 motion 或 equation 的题目改成 simple；用更多 token 补齐字段。",
+        "9. 只返回 JSON，不要 Markdown，不要解释。",
         `上一次返回内容：${truncateRawResponse(failure.raw)}`
       ].filter(Boolean).join("\n")
     }

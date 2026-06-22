@@ -65,7 +65,9 @@ describe("buildAnalyzeProblemPrompt", () => {
     expect(combined).toContain("knownValues 可以为空数组");
     expect(combined).toContain("steps 必须是字符串数组");
     expect(combined).toContain("targetQuantity");
+    expect(combined).toContain("answerLabel");
     expect(combined).toContain("answerValue");
+    expect(combined).toContain("不要限制为 time/distance/speed");
     expect(combined).toContain("不能为了省字段把适合 motion 或 equation 的题目改成 simple");
     expect(combined).toContain("小车每秒行 3 米");
   });

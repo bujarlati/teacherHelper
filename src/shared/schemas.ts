@@ -89,7 +89,8 @@ export const problemDemoPlanSchema = z.object({
     speed: z.number().positive(),
     speedUnit: z.string().min(1),
     answerSeconds: z.number().positive(),
-    targetQuantity: z.enum(["time", "distance", "speed"]).optional(),
+    targetQuantity: z.string().min(1).optional(),
+    answerLabel: z.string().min(1).optional(),
     answerValue: z.union([z.number(), z.string()]).optional(),
     answerUnit: z.string().optional()
   }).optional(),

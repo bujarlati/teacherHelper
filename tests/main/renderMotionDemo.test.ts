@@ -85,8 +85,35 @@ describe("renderMotionDemoHtml", () => {
       })
     );
 
-    expect(html).toContain("<strong>答案：</strong>240 千米");
+    expect(html).toContain("<strong>求甲乙两地的距离：</strong>240 千米");
     expect(html).not.toContain("<strong>答案：</strong>14400 秒");
+  });
+
+  it("renders the final answer with an open-ended question target label", () => {
+    const html = renderMotionDemoHtml(
+      motionPlan({
+        title: "相遇问题",
+        originalProblem: "甲乙两车相向而行，求相遇地点距离甲地多少千米。",
+        target: "求相遇地点距离甲地多少千米",
+        steps: ["先求相遇时间", "再求甲车行驶路程", "相遇地点距离甲地 100 千米"],
+        motion: {
+          startLabel: "甲地",
+          endLabel: "乙地",
+          distance: 160,
+          distanceUnit: "千米",
+          speed: 50,
+          speedUnit: "千米/时",
+          answerSeconds: 7200,
+          targetQuantity: "相遇地点距离甲地",
+          answerLabel: "相遇地点距离甲地",
+          answerValue: 100,
+          answerUnit: "千米"
+        } as ProblemDemoPlan["motion"]
+      })
+    );
+
+    expect(html).toContain("<strong>相遇地点距离甲地：</strong>100 千米");
+    expect(html).not.toContain("<strong>答案：</strong>100 千米");
   });
 
   it("throws when motion data is missing", () => {
@@ -121,6 +148,19 @@ describe("renderMotionDemoHtml", () => {
     expect(html).toContain('id="timer"');
     expect(html).toContain('id="walker"');
     expect(html).toContain('id="track"');
+  });
+
+  it("includes teacher interaction tools for step-by-step classroom explanation", () => {
+    const html = renderMotionDemoHtml(motionPlan());
+
+    expect(html).toContain('id="prev-step"');
+    expect(html).toContain('id="next-step"');
+    expect(html).toContain('id="step-focus"');
+    expect(html).toContain('data-step-index="0"');
+    expect(html).toContain('id="annotation-canvas"');
+    expect(html).toContain('id="clear-annotations"');
+    expect(html).toContain('draggable="true"');
+    expect(html).toContain('data-drag-marker');
   });
 
   it("uses a classroom playback duration instead of the real travel seconds", () => {
@@ -206,5 +246,35 @@ describe("renderMotionDemoHtml", () => {
 
     expect(timer?.textContent).toBe("演示：0.0 秒");
     expect(walker?.style.transform).toBe("translateX(0px)");
+  });
+
+  it("advances the focused teaching step with the next-step button", () => {
+    let now = 0;
+    const frames: FrameRequestCallback[] = [];
+    const html = renderMotionDemoHtml(motionPlan());
+    const dom = new JSDOM(html, {
+      pretendToBeVisual: true,
+      runScripts: "dangerously",
+      beforeParse(window) {
+        Object.defineProperty(window.performance, "now", {
+          configurable: true,
+          value: () => now
+        });
+        window.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+          frames.push(callback);
+          return frames.length;
+        };
+        window.cancelAnimationFrame = () => undefined;
+      }
+    });
+    const document = dom.window.document;
+    const stepFocus = document.getElementById("step-focus");
+    const nextStep = document.getElementById("next-step");
+
+    expect(stepFocus?.textContent).toContain("时间 = 路程 ÷ 速度");
+
+    nextStep?.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+
+    expect(stepFocus?.textContent).toContain("1000 ÷ 2 = 500");
   });
 });

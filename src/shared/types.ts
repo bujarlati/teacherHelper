@@ -70,7 +70,8 @@ export type ProblemDemoPlan = {
     speed: number;
     speedUnit: string;
     answerSeconds: number;
-    targetQuantity?: "time" | "distance" | "speed";
+    targetQuantity?: string;
+    answerLabel?: string;
     answerValue?: number | string;
     answerUnit?: string;
   };
