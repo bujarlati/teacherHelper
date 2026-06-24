@@ -110,6 +110,7 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
   const timeoutMs = options.timeoutMs ?? 300_000;
   const retryDelayMs = options.retryDelayMs ?? 750;
   const maxAttempts = 3;
+  const arkVideoBaseUrl = "https://ark.cn-beijing.volces.com/api/v3";
 
   async function requestJson(path: string, apiKey: string, init: RequestInit, requestTimeoutMs = timeoutMs): Promise<unknown> {
     let lastTransientError: unknown;
@@ -178,7 +179,8 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
     }, requestTimeoutMs);
 
     try {
-      const response = await fetchImpl(`${baseUrl}${path}`, {
+      const requestUrl = createRequestUrl(baseUrl, path);
+      const response = await fetchImpl(requestUrl, {
         ...init,
         signal: controller.signal,
         headers: {
@@ -221,7 +223,8 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
     }, requestTimeoutMs);
 
     try {
-      const response = await fetchImpl(`${baseUrl}${path}`, {
+      const requestUrl = createRequestUrl(baseUrl, path);
+      const response = await fetchImpl(requestUrl, {
         ...init,
         signal: controller.signal,
         headers: {
@@ -399,6 +402,19 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
       image?: string;
       negativePrompt?: string;
     }): Promise<string> {
+      if (isSeedanceModel(input.modelName)) {
+        const data = await requestJson(`${arkVideoBaseUrl}/contents/generations/tasks`, input.apiKey, {
+          method: "POST",
+          body: JSON.stringify(createSeedanceSubmitBody(input))
+        });
+        const taskId = readString(data, ["id"]) ?? readString(data, ["task_id"]);
+        if (!taskId) {
+          throw new Error("Volcengine Ark returned invalid Seedance submit response");
+        }
+
+        return `ark:${taskId}`;
+      }
+
       const data = await requestJson("/video/submit", input.apiKey, {
         method: "POST",
         body: JSON.stringify({
@@ -419,6 +435,15 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
     },
 
     async getVideoStatus(input: { apiKey: string; requestId: string }): Promise<VideoStatusResult> {
+      if (input.requestId.startsWith("ark:")) {
+        const taskId = input.requestId.slice("ark:".length);
+        const data = await requestJson(`${arkVideoBaseUrl}/contents/generations/tasks/${encodeURIComponent(taskId)}`, input.apiKey, {
+          method: "GET"
+        });
+
+        return parseSeedanceTaskStatus(data);
+      }
+
       const data = await requestJson("/video/status", input.apiKey, {
         method: "POST",
         body: JSON.stringify({ requestId: input.requestId })
@@ -478,6 +503,105 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
 
 function getDefaultReasoningEffort(modelName: string): "max" | undefined {
   return /(?:^|\/)glm-5\.2(?:$|[-_/])/i.test(modelName) ? "max" : undefined;
+}
+
+function createRequestUrl(baseUrl: string, path: string): string {
+  return /^https?:\/\//i.test(path) ? path : `${baseUrl}${path}`;
+}
+
+function isSeedanceModel(modelName: string): boolean {
+  return /(?:^|\/)doubao-seedance-|(?:^|\/)seedance-/i.test(modelName);
+}
+
+function createSeedanceSubmitBody(input: {
+  modelName: string;
+  prompt: string;
+  imageSize?: string;
+  image?: string;
+  negativePrompt?: string;
+}): Record<string, JsonValue | undefined> {
+  const content: JsonValue[] = [{
+    type: "text",
+    text: input.negativePrompt?.trim()
+      ? `${input.prompt}\n避免出现：${input.negativePrompt.trim()}`
+      : input.prompt
+  }];
+
+  if (input.image?.trim()) {
+    content.push({
+      type: "image_url",
+      image_url: { url: input.image.trim() },
+      role: "reference_image"
+    });
+  }
+
+  return {
+    model: input.modelName,
+    content,
+    generate_audio: true,
+    ratio: getSeedanceRatio(input.imageSize),
+    duration: 11,
+    watermark: false
+  };
+}
+
+function getSeedanceRatio(imageSize: string | undefined): string {
+  if (!imageSize) return "16:9";
+
+  const [widthText, heightText] = imageSize.split("x");
+  const width = Number(widthText);
+  const height = Number(heightText);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || height <= 0) {
+    return "16:9";
+  }
+
+  const ratio = width / height;
+  if (Math.abs(ratio - 16 / 9) < 0.02) return "16:9";
+  if (Math.abs(ratio - 9 / 16) < 0.02) return "9:16";
+  if (Math.abs(ratio - 1) < 0.02) return "1:1";
+  if (Math.abs(ratio - 4 / 3) < 0.02) return "4:3";
+  if (Math.abs(ratio - 3 / 4) < 0.02) return "3:4";
+  if (Math.abs(ratio - 21 / 9) < 0.02) return "21:9";
+
+  return "16:9";
+}
+
+function parseSeedanceTaskStatus(data: unknown): VideoStatusResult {
+  if (!isRecord(data)) {
+    throw new Error("Volcengine Ark returned invalid Seedance status response");
+  }
+
+  const rawStatus = typeof data.status === "string" ? data.status.toLowerCase() : undefined;
+  if (!rawStatus) {
+    throw new Error("Volcengine Ark returned invalid Seedance status response");
+  }
+
+  const status = mapSeedanceStatus(rawStatus);
+  const result: VideoStatusResult = { status };
+  const videoUrl = readString(data, ["content", "video_url"])
+    ?? readString(data, ["data", "content", "video_url"])
+    ?? readString(data, ["result_url"]);
+  if (videoUrl) {
+    result.videoUrl = videoUrl;
+  }
+
+  const reason = readString(data, ["error", "message"])
+    ?? readString(data, ["message"])
+    ?? (status === "Failed" ? `Seedance task ended with status: ${rawStatus}` : undefined);
+  if (reason) {
+    result.reason = reason;
+  }
+
+  return result;
+}
+
+function mapSeedanceStatus(status: string): VideoTaskStatus {
+  if (status === "queued") return "InQueue";
+  if (status === "running") return "InProgress";
+  if (status === "succeeded") return "Succeed";
+  if (status === "failed" || status === "expired" || status === "cancelled") return "Failed";
+
+  throw new Error("Volcengine Ark returned invalid Seedance status response");
 }
 
 async function readChatCompletionStream(body: ReadableStream<Uint8Array>): Promise<string> {

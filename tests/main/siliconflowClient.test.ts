@@ -631,6 +631,46 @@ describe("createSiliconFlowClient", () => {
     ).rejects.toThrow("SiliconFlow returned invalid video submit response");
   });
 
+  it("submits Seedance video tasks to Volcengine Ark with multimodal content", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: "cgt-seedance-1" }));
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(client.submitVideo({
+      apiKey: "ark-key",
+      modelName: "doubao-seedance-2-0-260128",
+      prompt: "用课堂动画展示分数加法。",
+      image: "data:image/png;base64,AAA",
+      imageSize: "1280x720",
+      negativePrompt: "不要出现错别字"
+    })).resolves.toBe("ark:cgt-seedance-1");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ Authorization: "Bearer ark-key" }),
+        body: JSON.stringify({
+          model: "doubao-seedance-2-0-260128",
+          content: [
+            {
+              type: "text",
+              text: "用课堂动画展示分数加法。\n避免出现：不要出现错别字"
+            },
+            {
+              type: "image_url",
+              image_url: { url: "data:image/png;base64,AAA" },
+              role: "reference_image"
+            }
+          ],
+          generate_audio: true,
+          ratio: "16:9",
+          duration: 11,
+          watermark: false
+        })
+      })
+    );
+  });
+
   it("parses a valid video status and first video URL", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({
@@ -657,6 +697,45 @@ describe("createSiliconFlowClient", () => {
         body: JSON.stringify({ requestId: "req-1" })
       })
     );
+  });
+
+  it("parses a successful Seedance task status from Volcengine Ark", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        id: "cgt-seedance-1",
+        status: "succeeded",
+        content: { video_url: "https://ark.example.test/video.mp4" }
+      })
+    );
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(client.getVideoStatus({ apiKey: "ark-key", requestId: "ark:cgt-seedance-1" })).resolves.toEqual({
+      status: "Succeed",
+      videoUrl: "https://ark.example.test/video.mp4"
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks/cgt-seedance-1",
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.objectContaining({ Authorization: "Bearer ark-key" })
+      })
+    );
+  });
+
+  it("maps Seedance failed and expired task statuses to failed video status", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        status: "expired",
+        error: { message: "task expired" }
+      })
+    );
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(client.getVideoStatus({ apiKey: "ark-key", requestId: "ark:cgt-expired" })).resolves.toEqual({
+      status: "Failed",
+      reason: "task expired"
+    });
   });
 
   it("accepts pending video status responses without generated results", async () => {
