@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ModelConfig, VideoTask, VideoTaskStatus } from "../shared/types.js";
+import type { ModelConfig, VideoSegmentTask, VideoTask, VideoTaskStatus } from "../shared/types.js";
 
 type VideoSubmitClient = {
   submitVideo(input: {
@@ -52,6 +52,7 @@ type PollVideoResult = {
 const missingVideoConfigMessage = "请先配置视频模型 API Key 和模型名称。";
 const timeoutMessage = "视频生成轮询超时，请稍后在任务历史中重试。";
 const defaultVideoDurationSeconds = 15;
+const maxProviderVideoDurationSeconds = 15;
 
 export async function submitVideoTask(input: SubmitVideoTaskInput): Promise<VideoTask> {
   if (!input.config.apiKey.trim() || !input.config.modelName.trim()) {
@@ -61,6 +62,11 @@ export async function submitVideoTask(input: SubmitVideoTaskInput): Promise<Vide
     throw new Error(
       `图生视频模型需要参考图片，请上传图片或改用文生视频模型 ${toTextToVideoModelName(input.config.modelName)}。`
     );
+  }
+
+  const requestedDuration = input.duration ?? defaultVideoDurationSeconds;
+  if (isSeedanceModel(input.config.modelName) && requestedDuration > maxProviderVideoDurationSeconds) {
+    return submitSegmentedVideoTask(input, requestedDuration);
   }
 
   const submitInput: Parameters<VideoSubmitClient["submitVideo"]>[0] = {
@@ -89,6 +95,67 @@ export async function submitVideoTask(input: SubmitVideoTaskInput): Promise<Vide
     createdAt: now,
     updatedAt: now
   };
+}
+
+async function submitSegmentedVideoTask(input: SubmitVideoTaskInput, requestedDuration: number): Promise<VideoTask> {
+  const segments = createVideoSegments(requestedDuration);
+  const segmentRequests: VideoSegmentTask[] = [];
+
+  for (const [index, duration] of segments.entries()) {
+    const requestId = await input.client.submitVideo({
+      apiKey: input.config.apiKey,
+      modelName: input.config.modelName,
+      prompt: createSegmentPrompt(input.prompt, index + 1, segments.length, duration),
+      ...(input.image ? { image: input.image } : {}),
+      ...(input.imageSize ? { imageSize: input.imageSize } : {}),
+      ...(input.negativePrompt ? { negativePrompt: input.negativePrompt } : {}),
+      duration
+    });
+
+    segmentRequests.push({
+      index: index + 1,
+      requestId,
+      status: "InQueue",
+      duration
+    });
+  }
+
+  const now = new Date().toISOString();
+
+  return {
+    id: randomUUID(),
+    requestId: `segments:${segmentRequests.map((segment) => segment.requestId).join(",")}`,
+    status: "InQueue",
+    prompt: input.prompt,
+    script: input.script,
+    imageSize: input.imageSize,
+    duration: requestedDuration,
+    negativePrompt: input.negativePrompt,
+    segmentRequests,
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+function createVideoSegments(duration: number): number[] {
+  const segments: number[] = [];
+  let remaining = duration;
+
+  while (remaining > 0) {
+    const segmentDuration = Math.min(maxProviderVideoDurationSeconds, remaining);
+    segments.push(segmentDuration);
+    remaining -= segmentDuration;
+  }
+
+  return segments;
+}
+
+function createSegmentPrompt(prompt: string, index: number, total: number, duration: number): string {
+  return [
+    prompt,
+    `这是完整教学视频的第 ${index}/${total} 段，本段约 ${duration} 秒。`,
+    "请保持与前后片段的视觉风格、角色、板书和讲解节奏一致；本段只讲一个清晰小步骤，结尾自然衔接下一段。"
+  ].join("\n");
 }
 
 export async function pollVideoUntilDone(input: PollVideoUntilDoneInput): Promise<PollVideoResult> {
@@ -127,6 +194,10 @@ function delay(intervalMs: number): Promise<void> {
 
 function isImageToVideoModel(modelName: string): boolean {
   return /I2V/i.test(modelName);
+}
+
+function isSeedanceModel(modelName: string): boolean {
+  return /(?:^|\/)doubao-seedance-|(?:^|\/)seedance-/i.test(modelName);
 }
 
 function toTextToVideoModelName(modelName: string): string {

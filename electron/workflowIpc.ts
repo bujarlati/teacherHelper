@@ -178,7 +178,7 @@ const generateVideoInputSchema = z.object({
   script: z.string().trim().optional().default(""),
   imageDataUrl: optionalTrimmedStringSchema,
   imageSize: videoImageSizeSchema.default("1280x720"),
-  duration: z.number().int().min(4).max(15).default(15),
+  duration: z.number().int().min(4).max(60).default(15),
   negativePrompt: optionalTrimmedStringSchema
 });
 const localTeachingDemoInputSchema = z.object({
@@ -965,6 +965,10 @@ function getErrorMessage(error: unknown): string {
 }
 
 async function saveCompletedVideoLocally(video: VideoRecord, deps: WorkflowDeps): Promise<VideoRecord> {
+  if (video.segmentRequests?.length && deps.downloadVideoFile) {
+    return saveCompletedVideoSegmentsLocally(video, deps);
+  }
+
   if (video.status !== "Succeed" || !video.videoUrl || video.localVideoPath || !deps.downloadVideoFile) {
     return video;
   }
@@ -987,6 +991,43 @@ async function saveCompletedVideoLocally(video: VideoRecord, deps: WorkflowDeps)
       reason: `视频已生成，但下载到本地失败：${getErrorMessage(error)}。请尽快打开视频链接保存。`
     };
   }
+}
+
+async function saveCompletedVideoSegmentsLocally(video: VideoRecord, deps: WorkflowDeps): Promise<VideoRecord> {
+  if (video.status !== "Succeed" || !video.segmentRequests?.length || !deps.downloadVideoFile) {
+    return video;
+  }
+
+  const segmentRequests = [];
+  let downloadError: string | undefined;
+
+  for (const segment of video.segmentRequests) {
+    if (segment.status !== "Succeed" || !segment.videoUrl || segment.localVideoPath) {
+      segmentRequests.push(segment);
+      continue;
+    }
+
+    try {
+      const localVideoPath = await deps.downloadVideoFile({
+        dataDir: deps.dataDir,
+        videoId: `${video.id}-part-${segment.index}`,
+        videoUrl: segment.videoUrl
+      });
+      segmentRequests.push({ ...segment, localVideoPath, reason: undefined });
+    } catch (error) {
+      downloadError = getErrorMessage(error);
+      segmentRequests.push(segment);
+    }
+  }
+
+  return {
+    ...video,
+    segmentRequests,
+    localVideoPath: segmentRequests[0]?.localVideoPath ?? video.localVideoPath,
+    reason: downloadError
+      ? `视频已生成，但部分片段下载到本地失败：${downloadError}。请尽快打开视频链接保存。`
+      : undefined
+  };
 }
 
 async function closeDemoServerQuietly(server: DemoServer): Promise<void> {

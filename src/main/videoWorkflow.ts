@@ -1,6 +1,6 @@
 import type { VideoRecord } from "./historyStore.js";
 import { submitVideoTask } from "./videoService.js";
-import type { LessonPlan, ModelConfig, VideoTaskStatus } from "../shared/types.js";
+import type { LessonPlan, ModelConfig, VideoSegmentTask, VideoTaskStatus } from "../shared/types.js";
 
 type VideoWorkflowClient = {
   submitVideo(input: {
@@ -128,6 +128,10 @@ export async function refreshVideoTaskStatus({
     throw new Error(missingVideoApiKeyMessage);
   }
 
+  if (task.segmentRequests?.length) {
+    return refreshSegmentedVideoTaskStatus({ task, config, client, now });
+  }
+
   const statusResult = await client.getVideoStatus({
     apiKey: config.apiKey,
     requestId: task.requestId
@@ -166,5 +170,66 @@ export async function refreshVideoTaskStatus({
   return {
     ...baseTask,
     reason: statusResult.reason ?? task.reason
+  };
+}
+
+async function refreshSegmentedVideoTaskStatus({
+  task,
+  config,
+  client,
+  now
+}: RefreshVideoTaskStatusInput): Promise<VideoRecord> {
+  const updatedSegments: VideoSegmentTask[] = [];
+
+  for (const segment of task.segmentRequests ?? []) {
+    if (segment.status === "Succeed" || segment.status === "Failed") {
+      updatedSegments.push(segment);
+      continue;
+    }
+
+    const statusResult = await client.getVideoStatus({
+      apiKey: config.apiKey,
+      requestId: segment.requestId
+    });
+
+    updatedSegments.push({
+      ...segment,
+      status: statusResult.status,
+      ...(statusResult.videoUrl ? { videoUrl: statusResult.videoUrl } : {}),
+      ...(statusResult.reason ? { reason: statusResult.reason } : {})
+    });
+  }
+
+  const updatedAt = now();
+  const failedSegment = updatedSegments.find((segment) => segment.status === "Failed");
+  if (failedSegment) {
+    return {
+      ...task,
+      status: "Failed",
+      segmentRequests: updatedSegments,
+      reason: failedSegment.reason ?? `第 ${failedSegment.index} 段视频生成失败。`,
+      updatedAt
+    };
+  }
+
+  const allSucceeded = updatedSegments.every((segment) => segment.status === "Succeed");
+  if (allSucceeded) {
+    return {
+      ...task,
+      status: "Succeed",
+      videoUrl: updatedSegments[0]?.videoUrl,
+      reason: undefined,
+      segmentRequests: updatedSegments,
+      updatedAt
+    };
+  }
+
+  const anyInProgress = updatedSegments.some((segment) => segment.status === "InProgress");
+
+  return {
+    ...task,
+    status: anyInProgress ? "InProgress" : "InQueue",
+    segmentRequests: updatedSegments,
+    updatedAt
   };
 }

@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { DemoKind, VideoTaskStatus } from "../shared/types.js";
+import type { DemoKind, VideoSegmentTask, VideoTaskStatus } from "../shared/types.js";
 import { readJsonFile, writeJsonFile } from "./jsonStore.js";
 
 export type LessonRecord = {
@@ -34,6 +34,7 @@ export type VideoRecord = {
   negativePrompt?: string;
   videoUrl?: string;
   localVideoPath?: string;
+  segmentRequests?: VideoSegmentTask[];
   reason?: string;
   createdAt: string;
   updatedAt: string;

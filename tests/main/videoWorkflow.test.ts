@@ -225,6 +225,47 @@ describe("refreshVideoTaskStatus", () => {
     });
   });
 
+  it("refreshes every segment for a one-minute video and succeeds when all segments are done", async () => {
+    const client: StatusClient = {
+      getVideoStatus: vi.fn()
+        .mockResolvedValueOnce({ status: "Succeed", videoUrl: "https://cdn.example.test/1.mp4" })
+        .mockResolvedValueOnce({ status: "Succeed", videoUrl: "https://cdn.example.test/2.mp4" })
+        .mockResolvedValueOnce({ status: "Succeed", videoUrl: "https://cdn.example.test/3.mp4" })
+        .mockResolvedValueOnce({ status: "Succeed", videoUrl: "https://cdn.example.test/4.mp4" })
+    };
+    const task = createVideoRecord({
+      requestId: "segments:ark:segment-1,ark:segment-2,ark:segment-3,ark:segment-4",
+      duration: 60,
+      segmentRequests: [
+        { index: 1, requestId: "ark:segment-1", status: "InQueue", duration: 15 },
+        { index: 2, requestId: "ark:segment-2", status: "InQueue", duration: 15 },
+        { index: 3, requestId: "ark:segment-3", status: "InQueue", duration: 15 },
+        { index: 4, requestId: "ark:segment-4", status: "InQueue", duration: 15 }
+      ]
+    });
+
+    await expect(
+      refreshVideoTaskStatus({
+        task,
+        config: { apiKey: "ark-key", modelName: "doubao-seedance-2-0-260128" },
+        client,
+        now: () => "2026-06-15T05:00:00.000Z"
+      })
+    ).resolves.toMatchObject({
+      status: "Succeed",
+      videoUrl: "https://cdn.example.test/1.mp4",
+      updatedAt: "2026-06-15T05:00:00.000Z",
+      segmentRequests: [
+        { index: 1, requestId: "ark:segment-1", status: "Succeed", videoUrl: "https://cdn.example.test/1.mp4" },
+        { index: 2, requestId: "ark:segment-2", status: "Succeed", videoUrl: "https://cdn.example.test/2.mp4" },
+        { index: 3, requestId: "ark:segment-3", status: "Succeed", videoUrl: "https://cdn.example.test/3.mp4" },
+        { index: 4, requestId: "ark:segment-4", status: "Succeed", videoUrl: "https://cdn.example.test/4.mp4" }
+      ]
+    });
+
+    expect(client.getVideoStatus).toHaveBeenCalledTimes(4);
+  });
+
   it("marks a successful provider response without a URL as failed", async () => {
     const client: StatusClient = {
       getVideoStatus: vi.fn().mockResolvedValue({ status: "Succeed" })

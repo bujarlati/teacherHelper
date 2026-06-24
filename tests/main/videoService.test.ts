@@ -93,6 +93,45 @@ describe("submitVideoTask", () => {
     });
   });
 
+  it("splits a one-minute Seedance video into four 15-second tasks", async () => {
+    const client: SubmitClient = {
+      submitVideo: vi.fn()
+        .mockResolvedValueOnce("ark:segment-1")
+        .mockResolvedValueOnce("ark:segment-2")
+        .mockResolvedValueOnce("ark:segment-3")
+        .mockResolvedValueOnce("ark:segment-4")
+    };
+
+    const task = await submitVideoTask({
+      client,
+      config: { apiKey: "ark-key", modelName: "doubao-seedance-2-0-260128" },
+      prompt: "用课堂动画讲解分数加法。",
+      script: "先讲同分母，再讲异分母，最后总结。",
+      duration: 60
+    });
+
+    expect(client.submitVideo).toHaveBeenCalledTimes(4);
+    expect(client.submitVideo).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      duration: 15,
+      prompt: expect.stringContaining("第 1/4 段")
+    }));
+    expect(client.submitVideo).toHaveBeenNthCalledWith(4, expect.objectContaining({
+      duration: 15,
+      prompt: expect.stringContaining("第 4/4 段")
+    }));
+    expect(task).toMatchObject({
+      requestId: "segments:ark:segment-1,ark:segment-2,ark:segment-3,ark:segment-4",
+      status: "InQueue",
+      duration: 60,
+      segmentRequests: [
+        { index: 1, requestId: "ark:segment-1", status: "InQueue", duration: 15 },
+        { index: 2, requestId: "ark:segment-2", status: "InQueue", duration: 15 },
+        { index: 3, requestId: "ark:segment-3", status: "InQueue", duration: 15 },
+        { index: 4, requestId: "ark:segment-4", status: "InQueue", duration: 15 }
+      ]
+    });
+  });
+
   it("rejects image-to-video models without an input image before calling the client", async () => {
     const client: SubmitClient = {
       submitVideo: vi.fn()

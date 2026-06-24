@@ -16,7 +16,7 @@ const videoAutoRefreshMs = 30_000;
 const queueClockRefreshMs = 60_000;
 const longQueueWarningMinutes = 30;
 const minVideoDurationSeconds = 4;
-const maxVideoDurationSeconds = 15;
+const maxVideoDurationSeconds = 60;
 
 export function VideoPage(): ReactElement {
   const [prompt, setPrompt] = useState("");
@@ -389,6 +389,14 @@ export function VideoPage(): ReactElement {
                 </dd>
               </div>
             ) : null}
+            {video.segmentRequests?.length ? (
+              <div>
+                <dt>片段</dt>
+                <dd>
+                  <SegmentPreviewList video={video} />
+                </dd>
+              </div>
+            ) : null}
             {video.localVideoPath ? (
               <div>
                 <dt>本地</dt>
@@ -457,6 +465,26 @@ function VideoPreview({ video }: { video: VideoRecord }): ReactElement {
   );
 }
 
+function SegmentPreviewList({ video }: { video: VideoRecord }): ReactElement {
+  return (
+    <div className="video-segment-list">
+      {video.segmentRequests?.map((segment) => {
+        const url = getSegmentPlaybackUrl(segment);
+
+        return (
+          <div className="video-segment-item" key={segment.requestId}>
+            <p>第 {segment.index} 段：{segment.status}{segment.duration ? `，${segment.duration} 秒` : ""}</p>
+            {url ? (
+              <video className="video-preview" controls preload="metadata" src={url} aria-label={`第 ${segment.index} 段视频预览`} />
+            ) : null}
+            {segment.reason ? <p className="status-text status-error">{segment.reason}</p> : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function canAutoRefreshVideo(status: string): boolean {
   return status === "InQueue" || status === "InProgress";
 }
@@ -486,6 +514,10 @@ function getQueueMinutes(createdAt: string, nowMs: number): number {
 
 function getVideoPlaybackUrl(video: VideoRecord): string {
   return video.localVideoPath ? toFileUrl(video.localVideoPath) : video.videoUrl ?? "";
+}
+
+function getSegmentPlaybackUrl(segment: NonNullable<VideoRecord["segmentRequests"]>[number]): string {
+  return segment.localVideoPath ? toFileUrl(segment.localVideoPath) : segment.videoUrl ?? "";
 }
 
 function toFileUrl(filePath: string): string {

@@ -93,6 +93,16 @@ export type VideoTaskStatus = "Succeed" | "InQueue" | "InProgress" | "Failed";
 
 export type VideoImageSize = "1280x720" | "720x1280" | "960x960";
 
+export type VideoSegmentTask = {
+  index: number;
+  requestId: string;
+  status: VideoTaskStatus;
+  duration: number;
+  videoUrl?: string;
+  localVideoPath?: string;
+  reason?: string;
+};
+
 export type VideoGenerateInput = {
   prompt: string;
   script: string;
@@ -134,6 +144,7 @@ export type VideoTask = {
   negativePrompt?: string;
   videoUrl?: string;
   localVideoPath?: string;
+  segmentRequests?: VideoSegmentTask[];
   reason?: string;
   createdAt: string;
   updatedAt: string;
