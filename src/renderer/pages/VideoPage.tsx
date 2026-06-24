@@ -472,7 +472,7 @@ function SegmentPreviewList({ video }: { video: VideoRecord }): ReactElement {
         const url = getSegmentPlaybackUrl(segment);
 
         return (
-          <div className="video-segment-item" key={segment.requestId}>
+          <div className="video-segment-item" key={segment.requestId ?? segment.index}>
             <p>第 {segment.index} 段：{segment.status}{segment.duration ? `，${segment.duration} 秒` : ""}</p>
             {url ? (
               <video className="video-preview" controls preload="metadata" src={url} aria-label={`第 ${segment.index} 段视频预览`} />

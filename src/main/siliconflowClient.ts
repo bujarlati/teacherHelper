@@ -401,6 +401,7 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
       imageSize?: string;
       image?: string;
       negativePrompt?: string;
+      referenceVideo?: string;
       duration?: number;
     }): Promise<string> {
       if (isSeedanceModel(input.modelName)) {
@@ -520,6 +521,7 @@ function createSeedanceSubmitBody(input: {
   imageSize?: string;
   image?: string;
   negativePrompt?: string;
+  referenceVideo?: string;
   duration?: number;
 }): Record<string, JsonValue | undefined> {
   const content: JsonValue[] = [{
@@ -534,6 +536,14 @@ function createSeedanceSubmitBody(input: {
       type: "image_url",
       image_url: { url: input.image.trim() },
       role: "reference_image"
+    });
+  }
+
+  if (input.referenceVideo?.trim()) {
+    content.push({
+      type: "video_url",
+      video_url: { url: input.referenceVideo.trim() },
+      role: "reference_video"
     });
   }
 

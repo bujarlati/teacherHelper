@@ -17,10 +17,12 @@ type SubmitClient = {
     imageSize?: string;
     negativePrompt?: string;
     duration?: number;
+    referenceVideo?: string;
   }) => Promise<string>;
 };
 
 type StatusClient = {
+  submitVideo?: SubmitClient["submitVideo"];
   getVideoStatus: (input: {
     apiKey: string;
     requestId: string;
@@ -225,22 +227,19 @@ describe("refreshVideoTaskStatus", () => {
     });
   });
 
-  it("refreshes every segment for a one-minute video and succeeds when all segments are done", async () => {
+  it("submits the next Seedance segment with the previous segment video as reference", async () => {
     const client: StatusClient = {
-      getVideoStatus: vi.fn()
-        .mockResolvedValueOnce({ status: "Succeed", videoUrl: "https://cdn.example.test/1.mp4" })
-        .mockResolvedValueOnce({ status: "Succeed", videoUrl: "https://cdn.example.test/2.mp4" })
-        .mockResolvedValueOnce({ status: "Succeed", videoUrl: "https://cdn.example.test/3.mp4" })
-        .mockResolvedValueOnce({ status: "Succeed", videoUrl: "https://cdn.example.test/4.mp4" })
+      getVideoStatus: vi.fn().mockResolvedValueOnce({ status: "Succeed", videoUrl: "https://cdn.example.test/1.mp4" }),
+      submitVideo: vi.fn().mockResolvedValueOnce("ark:segment-2")
     };
     const task = createVideoRecord({
-      requestId: "segments:ark:segment-1,ark:segment-2,ark:segment-3,ark:segment-4",
+      requestId: "segments:ark:segment-1",
       duration: 60,
       segmentRequests: [
         { index: 1, requestId: "ark:segment-1", status: "InQueue", duration: 15 },
-        { index: 2, requestId: "ark:segment-2", status: "InQueue", duration: 15 },
-        { index: 3, requestId: "ark:segment-3", status: "InQueue", duration: 15 },
-        { index: 4, requestId: "ark:segment-4", status: "InQueue", duration: 15 }
+        { index: 2, status: "Pending", duration: 15 },
+        { index: 3, status: "Pending", duration: 15 },
+        { index: 4, status: "Pending", duration: 15 }
       ]
     });
 
@@ -252,18 +251,23 @@ describe("refreshVideoTaskStatus", () => {
         now: () => "2026-06-15T05:00:00.000Z"
       })
     ).resolves.toMatchObject({
-      status: "Succeed",
-      videoUrl: "https://cdn.example.test/1.mp4",
+      status: "InQueue",
+      requestId: "segments:ark:segment-1,ark:segment-2",
       updatedAt: "2026-06-15T05:00:00.000Z",
       segmentRequests: [
         { index: 1, requestId: "ark:segment-1", status: "Succeed", videoUrl: "https://cdn.example.test/1.mp4" },
-        { index: 2, requestId: "ark:segment-2", status: "Succeed", videoUrl: "https://cdn.example.test/2.mp4" },
-        { index: 3, requestId: "ark:segment-3", status: "Succeed", videoUrl: "https://cdn.example.test/3.mp4" },
-        { index: 4, requestId: "ark:segment-4", status: "Succeed", videoUrl: "https://cdn.example.test/4.mp4" }
+        { index: 2, requestId: "ark:segment-2", status: "InQueue", duration: 15 },
+        { index: 3, status: "Pending", duration: 15 },
+        { index: 4, status: "Pending", duration: 15 }
       ]
     });
 
-    expect(client.getVideoStatus).toHaveBeenCalledTimes(4);
+    expect(client.getVideoStatus).toHaveBeenCalledTimes(1);
+    expect(client.submitVideo).toHaveBeenCalledWith(expect.objectContaining({
+      referenceVideo: "https://cdn.example.test/1.mp4",
+      duration: 15,
+      prompt: expect.stringContaining("第 2/4 段")
+    }));
   });
 
   it("marks a successful provider response without a URL as failed", async () => {

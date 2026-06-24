@@ -10,6 +10,7 @@ type VideoSubmitClient = {
     imageSize?: string;
     negativePrompt?: string;
     duration?: number;
+    referenceVideo?: string;
   }): Promise<string>;
 };
 
@@ -100,22 +101,28 @@ export async function submitVideoTask(input: SubmitVideoTaskInput): Promise<Vide
 async function submitSegmentedVideoTask(input: SubmitVideoTaskInput, requestedDuration: number): Promise<VideoTask> {
   const segments = createVideoSegments(requestedDuration);
   const segmentRequests: VideoSegmentTask[] = [];
+  const firstDuration = segments[0] ?? maxProviderVideoDurationSeconds;
+  const firstRequestId = await input.client.submitVideo({
+    apiKey: input.config.apiKey,
+    modelName: input.config.modelName,
+    prompt: createSegmentPrompt(input.prompt, 1, segments.length, firstDuration),
+    ...(input.image ? { image: input.image } : {}),
+    ...(input.imageSize ? { imageSize: input.imageSize } : {}),
+    ...(input.negativePrompt ? { negativePrompt: input.negativePrompt } : {}),
+    duration: firstDuration
+  });
 
-  for (const [index, duration] of segments.entries()) {
-    const requestId = await input.client.submitVideo({
-      apiKey: input.config.apiKey,
-      modelName: input.config.modelName,
-      prompt: createSegmentPrompt(input.prompt, index + 1, segments.length, duration),
-      ...(input.image ? { image: input.image } : {}),
-      ...(input.imageSize ? { imageSize: input.imageSize } : {}),
-      ...(input.negativePrompt ? { negativePrompt: input.negativePrompt } : {}),
-      duration
-    });
+  segmentRequests.push({
+    index: 1,
+    requestId: firstRequestId,
+    status: "InQueue",
+    duration: firstDuration
+  });
 
+  for (const [index, duration] of segments.slice(1).entries()) {
     segmentRequests.push({
-      index: index + 1,
-      requestId,
-      status: "InQueue",
+      index: index + 2,
+      status: "Pending",
       duration
     });
   }
@@ -124,7 +131,7 @@ async function submitSegmentedVideoTask(input: SubmitVideoTaskInput, requestedDu
 
   return {
     id: randomUUID(),
-    requestId: `segments:${segmentRequests.map((segment) => segment.requestId).join(",")}`,
+    requestId: `segments:${firstRequestId}`,
     status: "InQueue",
     prompt: input.prompt,
     script: input.script,

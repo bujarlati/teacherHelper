@@ -95,8 +95,8 @@ export type VideoImageSize = "1280x720" | "720x1280" | "960x960";
 
 export type VideoSegmentTask = {
   index: number;
-  requestId: string;
-  status: VideoTaskStatus;
+  requestId?: string;
+  status: VideoTaskStatus | "Pending";
   duration: number;
   videoUrl?: string;
   localVideoPath?: string;

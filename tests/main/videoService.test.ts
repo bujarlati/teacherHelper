@@ -11,6 +11,7 @@ type SubmitClient = {
     imageSize?: string;
     negativePrompt?: string;
     duration?: number;
+    referenceVideo?: string;
   }) => Promise<string>;
 };
 
@@ -93,13 +94,9 @@ describe("submitVideoTask", () => {
     });
   });
 
-  it("splits a one-minute Seedance video into four 15-second tasks", async () => {
+  it("starts a one-minute Seedance video with one segment and plans linked follow-up segments", async () => {
     const client: SubmitClient = {
-      submitVideo: vi.fn()
-        .mockResolvedValueOnce("ark:segment-1")
-        .mockResolvedValueOnce("ark:segment-2")
-        .mockResolvedValueOnce("ark:segment-3")
-        .mockResolvedValueOnce("ark:segment-4")
+      submitVideo: vi.fn().mockResolvedValueOnce("ark:segment-1")
     };
 
     const task = await submitVideoTask({
@@ -110,24 +107,20 @@ describe("submitVideoTask", () => {
       duration: 60
     });
 
-    expect(client.submitVideo).toHaveBeenCalledTimes(4);
-    expect(client.submitVideo).toHaveBeenNthCalledWith(1, expect.objectContaining({
+    expect(client.submitVideo).toHaveBeenCalledTimes(1);
+    expect(client.submitVideo).toHaveBeenCalledWith(expect.objectContaining({
       duration: 15,
       prompt: expect.stringContaining("第 1/4 段")
     }));
-    expect(client.submitVideo).toHaveBeenNthCalledWith(4, expect.objectContaining({
-      duration: 15,
-      prompt: expect.stringContaining("第 4/4 段")
-    }));
     expect(task).toMatchObject({
-      requestId: "segments:ark:segment-1,ark:segment-2,ark:segment-3,ark:segment-4",
+      requestId: "segments:ark:segment-1",
       status: "InQueue",
       duration: 60,
       segmentRequests: [
         { index: 1, requestId: "ark:segment-1", status: "InQueue", duration: 15 },
-        { index: 2, requestId: "ark:segment-2", status: "InQueue", duration: 15 },
-        { index: 3, requestId: "ark:segment-3", status: "InQueue", duration: 15 },
-        { index: 4, requestId: "ark:segment-4", status: "InQueue", duration: 15 }
+        { index: 2, status: "Pending", duration: 15 },
+        { index: 3, status: "Pending", duration: 15 },
+        { index: 4, status: "Pending", duration: 15 }
       ]
     });
   });

@@ -672,6 +672,40 @@ describe("createSiliconFlowClient", () => {
     );
   });
 
+  it("submits Seedance follow-up segments with a reference video", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: "cgt-seedance-2" }));
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(client.submitVideo({
+      apiKey: "ark-key",
+      modelName: "doubao-seedance-2-0-260128",
+      prompt: "继续讲解第二段。",
+      referenceVideo: "https://cdn.example.test/segment-1.mp4",
+      duration: 15
+    } as Parameters<typeof client.submitVideo>[0] & { referenceVideo: string })).resolves.toBe("ark:cgt-seedance-2");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks",
+      expect.objectContaining({
+        body: JSON.stringify({
+          model: "doubao-seedance-2-0-260128",
+          content: [
+            { type: "text", text: "继续讲解第二段。" },
+            {
+              type: "video_url",
+              video_url: { url: "https://cdn.example.test/segment-1.mp4" },
+              role: "reference_video"
+            }
+          ],
+          generate_audio: true,
+          ratio: "16:9",
+          duration: 15,
+          watermark: false
+        })
+      })
+    );
+  });
+
   it("parses a valid video status and first video URL", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({

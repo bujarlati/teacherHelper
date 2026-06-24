@@ -11,6 +11,7 @@ type VideoWorkflowClient = {
     imageSize?: string;
     negativePrompt?: string;
     duration?: number;
+    referenceVideo?: string;
   }): Promise<string>;
 };
 
@@ -43,7 +44,7 @@ type CreateStandaloneVideoTaskInput = {
 type RefreshVideoTaskStatusInput = {
   task: VideoRecord;
   config: ModelConfig;
-  client: VideoStatusClient;
+  client: VideoStatusClient & Partial<VideoWorkflowClient>;
   now: () => string;
 };
 
@@ -187,6 +188,40 @@ async function refreshSegmentedVideoTaskStatus({
       continue;
     }
 
+    if (segment.status === "Pending") {
+      const previousSegment = updatedSegments[updatedSegments.length - 1];
+      if (previousSegment?.status === "Succeed" && previousSegment.videoUrl) {
+        if (!client.submitVideo) {
+          throw new Error("视频生成服务未初始化。");
+        }
+
+        const requestId = await client.submitVideo({
+          apiKey: config.apiKey,
+          modelName: config.modelName,
+          prompt: createSegmentPrompt(task.prompt, segment.index, task.segmentRequests?.length ?? segment.index, segment.duration),
+          ...(task.imageSize ? { imageSize: task.imageSize } : {}),
+          ...(task.negativePrompt ? { negativePrompt: task.negativePrompt } : {}),
+          referenceVideo: previousSegment.videoUrl,
+          duration: segment.duration
+        });
+
+        updatedSegments.push({
+          ...segment,
+          requestId,
+          status: "InQueue"
+        });
+        continue;
+      }
+
+      updatedSegments.push(segment);
+      continue;
+    }
+
+    if (!segment.requestId) {
+      updatedSegments.push(segment);
+      continue;
+    }
+
     const statusResult = await client.getVideoStatus({
       apiKey: config.apiKey,
       requestId: segment.requestId
@@ -229,7 +264,24 @@ async function refreshSegmentedVideoTaskStatus({
   return {
     ...task,
     status: anyInProgress ? "InProgress" : "InQueue",
+    requestId: createSegmentedRequestId(updatedSegments),
     segmentRequests: updatedSegments,
     updatedAt
   };
+}
+
+function createSegmentPrompt(prompt: string, index: number, total: number, duration: number): string {
+  return [
+    prompt,
+    `这是完整教学视频的第 ${index}/${total} 段，本段约 ${duration} 秒。`,
+    "请以上一段视频作为连续性参考，延续相同角色、构图、板书、配色、镜头运动和讲解节奏；本段只推进下一个清晰小步骤。"
+  ].join("\n");
+}
+
+function createSegmentedRequestId(segments: VideoSegmentTask[]): string {
+  const requestIds = segments
+    .map((segment) => segment.requestId)
+    .filter((requestId): requestId is string => Boolean(requestId));
+
+  return `segments:${requestIds.join(",")}`;
 }
