@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import type { ReactElement } from "react";
-import type { LessonPlan, VideoTask } from "../../shared/types";
+import type { LessonImageAsset, LessonPlan, LocalTeachingDemoResult, VideoTask } from "../../shared/types";
 import { api } from "../api";
 
 type StatusTone = "muted" | "success" | "error";
@@ -15,6 +15,10 @@ type LessonResult = {
   lesson: LessonPlan;
   videoTask?: VideoTask;
   videoError?: string;
+  imageAssets?: LessonImageAsset[];
+  imageError?: string;
+  localDemo?: LocalTeachingDemoResult;
+  demoError?: string;
 };
 
 type GenerationProgress = {
@@ -27,6 +31,7 @@ type GenerationProgress = {
 export function LessonPage(): ReactElement {
   const [topic, setTopic] = useState("");
   const [result, setResult] = useState<LessonResult | undefined>();
+  const [lessonFeedback, setLessonFeedback] = useState("");
   const [exportPath, setExportPath] = useState("");
   const [status, setStatus] = useState<StatusMessage>({ tone: "muted", text: "输入课题后生成教案。" });
   const [generationProgress, setGenerationProgress] = useState<GenerationProgress | undefined>();
@@ -67,11 +72,42 @@ export function LessonPage(): ReactElement {
       const nextResult = await api.generateLesson(trimmedTopic);
       setResult(nextResult);
       setStatus({
-        tone: nextResult.videoError ? "error" : "success",
+        tone: hasLessonGenerateWarning(nextResult) ? "error" : "success",
         text: getLessonGenerateStatus(nextResult)
       });
     } catch (error) {
       setStatus({ tone: "error", text: getErrorMessage(error, "生成教案失败，请检查设置后重试。") });
+    } finally {
+      setGenerationProgress(undefined);
+      setIsGenerating(false);
+    }
+  }
+
+  async function handleRefine(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (!result) return;
+
+    const feedback = lessonFeedback.trim();
+    if (!feedback) {
+      setStatus({ tone: "error", text: "请先输入修改要求。" });
+      return;
+    }
+
+    setIsGenerating(true);
+    setGenerationProgress(createGenerationProgress(0));
+    setExportPath("");
+    setStatus({ tone: "muted", text: "正在根据修改要求更新教案..." });
+
+    try {
+      const nextResult = await api.generateLesson(createLessonRefinementTopic(topic, result.lesson, feedback));
+      setResult(nextResult);
+      setLessonFeedback("");
+      setStatus({
+        tone: hasLessonGenerateWarning(nextResult) ? "error" : "success",
+        text: getLessonGenerateStatus(nextResult)
+      });
+    } catch (error) {
+      setStatus({ tone: "error", text: getErrorMessage(error, "修改教案失败，请检查设置后重试。") });
     } finally {
       setGenerationProgress(undefined);
       setIsGenerating(false);
@@ -171,10 +207,62 @@ export function LessonPage(): ReactElement {
         <p className="path-output" aria-label="导出路径">{exportPath}</p>
       ) : null}
 
+      {result?.localDemo ? (
+        <section className="result-section" aria-labelledby="lesson-demo-title">
+          <h2 id="lesson-demo-title">本地教学演示</h2>
+          <dl className="metadata-list">
+            <div>
+              <dt>标题</dt>
+              <dd>{result.localDemo.title}</dd>
+            </div>
+            <div>
+              <dt>预览</dt>
+              <dd>
+                <a className="secondary-link" href={result.localDemo.url} target="_blank" rel="noreferrer">
+                  打开本地教学演示
+                </a>
+              </dd>
+            </div>
+          </dl>
+        </section>
+      ) : null}
+
+      {result?.imageAssets?.length ? (
+        <section className="result-section" aria-labelledby="lesson-images-title">
+          <h2 id="lesson-images-title">课堂图片</h2>
+          <div className="lesson-image-grid">
+            {result.imageAssets.map((asset, index) => (
+              <figure className="lesson-image-card" key={`${asset.title}-${index}`}>
+                <img src={asset.src} alt={asset.title} />
+                <figcaption>
+                  <strong>{asset.title}</strong>
+                  <span>{asset.prompt}</span>
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {result ? (
         <section className="result-section" aria-labelledby="lesson-result-title">
           <h2 id="lesson-result-title">{result.lesson.title}</h2>
           <pre className="markdown-output">{result.lesson.markdown}</pre>
+          <form className="refinement-form" onSubmit={(event) => void handleRefine(event)}>
+            <label>
+              <span>教案修改要求</span>
+              <textarea
+                rows={3}
+                disabled={isBusy}
+                value={lessonFeedback}
+                onChange={(event) => setLessonFeedback(event.target.value)}
+                placeholder="例如：加入生活情境、降低难度、补 2 道分层练习"
+              />
+            </label>
+            <div className="form-actions">
+              <button type="submit" className="secondary-button" disabled={isBusy}>根据要求修改教案</button>
+            </div>
+          </form>
         </section>
       ) : null}
     </section>
@@ -185,7 +273,23 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+function hasLessonGenerateWarning(result: LessonResult): boolean {
+  return Boolean(result.videoError || result.demoError || result.imageError);
+}
+
 function getLessonGenerateStatus(result: LessonResult): string {
+  if (result.localDemo && result.imageError) {
+    return `教案已生成，本地教学演示已打开；图片生成失败：${result.imageError}`;
+  }
+  if (result.localDemo) {
+    return "教案已生成，本地教学演示已打开。";
+  }
+  if (result.demoError) {
+    return `教案已生成，本地教学演示生成失败：${result.demoError}`;
+  }
+  if (result.imageError) {
+    return `教案已生成，图片生成失败：${result.imageError}`;
+  }
   if (result.videoTask) {
     return `视频任务已提交：${result.videoTask.status}`;
   }
@@ -203,4 +307,14 @@ function createGenerationProgress(elapsedSeconds: number): GenerationProgress {
     percent: Math.min(92, 8 + elapsedSeconds * 2),
     isSlow: elapsedSeconds >= 60
   };
+}
+
+function createLessonRefinementTopic(topic: string, lesson: LessonPlan, feedback: string): string {
+  return [
+    "请基于以下已有教案进行二次修改，并输出一份完整的新教案。",
+    `原始课题：${topic.trim() || lesson.title}`,
+    `修改要求：${feedback}`,
+    "已有教案 Markdown：",
+    lesson.markdown
+  ].join("\n\n");
 }

@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -91,6 +91,7 @@ function createBaseDeps(overrides: Record<string, unknown> = {}) {
     renderMotionDemoHtml: vi.fn(),
     renderEquationDemoHtml: vi.fn().mockReturnValue("<!doctype html><title>demo</title>"),
     renderSimpleDemoHtml: vi.fn(),
+    renderTeachingDemoHtml: vi.fn().mockReturnValue("<!doctype html><title>local demo</title>"),
     startDemoServer: vi.fn(),
     openExternal: vi.fn().mockResolvedValue(undefined),
     exportLessonDocx: vi.fn(),
@@ -103,7 +104,11 @@ function createBaseDeps(overrides: Record<string, unknown> = {}) {
 const completeSettings: AppSettings = {
   textModel: { apiKey: "text-key", modelName: "text-model" },
   videoModel: { apiKey: "video-key", modelName: "video-model" },
+  imageModel: { apiKey: "image-key", modelName: "Tongyi-MAI/Z-Image" },
   embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+  rerankerModel: { apiKey: "rerank-key", modelName: "Qwen/Qwen3-VL-Reranker-8B" },
+  demoGeneration: { mode: "template" },
+  videoStorage: { directory: "" },
   qdrant: { mode: "local", url: "http://127.0.0.1:6333", apiKey: "", collectionPrefix: "teacherhelper" }
 };
 
@@ -153,27 +158,21 @@ afterEach(async () => {
 });
 
 describe("registerWorkflowIpcHandlers", () => {
-  it("generates a lesson, saves it, and submits a video task when video config is present", async () => {
+  it("generates a lesson, saves it, and opens a local teaching demo", async () => {
     const fakeIpcMain = createFakeIpcMain();
     const addedLessons: LessonRecord[] = [];
+    const addedDemos: DemoRecord[] = [];
     const upsertedVideos: VideoRecord[] = [];
     const createdAt = "2026-06-15T01:02:03.000Z";
-    const videoTask: VideoRecord = {
-      id: "video-1",
-      lessonId: "lesson-1",
-      requestId: "request-1",
-      status: "InQueue",
-      prompt: lesson.video_prompt,
-      script: lesson.video_script,
-      createdAt,
-      updatedAt: createdAt
-    };
+    const createVideoTaskFromLesson = vi.fn();
+    const renderTeachingDemoHtml = vi.fn().mockReturnValue("<!doctype html><title>lesson demo</title>");
+    const openExternal = vi.fn().mockResolvedValue(undefined);
 
     registerWorkflowIpcHandlers(fakeIpcMain, {
       configStore: { load: vi.fn().mockResolvedValue(completeSettings) },
       historyStore: {
         addLesson: async (record) => { addedLessons.push(record); },
-        addDemo: vi.fn(),
+        addDemo: async (record) => { addedDemos.push(record); },
         upsertVideo: async (record) => { upsertedVideos.push(record); },
         listLessons: vi.fn(),
         listDemos: vi.fn(),
@@ -184,32 +183,68 @@ describe("registerWorkflowIpcHandlers", () => {
       createId: () => "lesson-1",
       now: () => createdAt,
       generateLessonPlan: vi.fn().mockResolvedValue(lesson),
-      createVideoTaskFromLesson: vi.fn().mockResolvedValue(videoTask),
+      createVideoTaskFromLesson,
       refreshVideoTaskStatus: vi.fn(),
       analyzeProblemForDemo: vi.fn(),
       chooseDemoRenderer: vi.fn(),
       renderMotionDemoHtml: vi.fn(),
       renderEquationDemoHtml: vi.fn(),
       renderSimpleDemoHtml: vi.fn(),
-      startDemoServer: vi.fn(),
-      openExternal: vi.fn(),
+      renderTeachingDemoHtml,
+      startDemoServer: vi.fn().mockResolvedValue({ url: "http://127.0.0.1:8123/", close: vi.fn() }),
+      openExternal,
       exportLessonDocx: vi.fn()
     });
 
     const result = await fakeIpcMain.handlers.get("lesson:generate")?.({}, " 一次函数 ");
 
-    expect(result).toEqual({ id: "lesson-1", lesson, videoTask });
-    expect(addedLessons).toEqual([{
+    expect(result).toEqual({
+      id: "lesson-1",
+      lesson,
+      localDemo: {
+        id: "lesson-1",
+        title: lesson.title,
+        url: "http://127.0.0.1:8123/"
+      }
+    });
+    expect(addedLessons[0]).toEqual({
       id: "lesson-1",
       title: lesson.title,
       topic: "一次函数",
       markdown: lesson.markdown,
       createdAt
+    });
+    expect(addedLessons.at(-1)).toEqual({
+      id: "lesson-1",
+      title: lesson.title,
+      topic: "一次函数",
+      markdown: lesson.markdown,
+      createdAt,
+      demoId: "lesson-1",
+      demoPath: join(tmpDir, "local-demos", "lesson-1")
+    });
+    expect(addedDemos).toEqual([{
+      id: "lesson-1",
+      title: lesson.title,
+      problem: lesson.video_prompt,
+      kind: "simple",
+      demoPath: join(tmpDir, "local-demos", "lesson-1"),
+      createdAt
     }]);
-    expect(upsertedVideos).toEqual([videoTask]);
+    expect(renderTeachingDemoHtml).toHaveBeenCalledWith({
+      title: lesson.title,
+      prompt: lesson.video_prompt,
+      script: lesson.video_script,
+      exampleQuestions: lesson.example_questions,
+      workedSolutions: lesson.worked_solutions
+    });
+    await expect(readFile(join(tmpDir, "local-demos", "lesson-1", "index.html"), "utf8")).resolves.toContain("lesson demo");
+    expect(openExternal).toHaveBeenCalledWith("http://127.0.0.1:8123/");
+    expect(createVideoTaskFromLesson).not.toHaveBeenCalled();
+    expect(upsertedVideos).toEqual([]);
   });
 
-  it("returns a lesson with a video error when video submission fails", async () => {
+  it("returns a lesson with a local demo error when local demo generation fails", async () => {
     const fakeIpcMain = createFakeIpcMain();
     const addedLessons: LessonRecord[] = [];
     const upsertVideo = vi.fn();
@@ -226,13 +261,13 @@ describe("registerWorkflowIpcHandlers", () => {
       createId: () => "lesson-1",
       now: () => "2026-06-15T01:02:03.000Z",
       generateLessonPlan: vi.fn().mockResolvedValue(lesson),
-      createVideoTaskFromLesson: vi.fn().mockRejectedValue(new Error("video quota exceeded"))
+      startDemoServer: vi.fn().mockRejectedValue(new Error("local preview failed"))
     }));
 
     await expect(fakeIpcMain.handlers.get("lesson:generate")?.({}, " 一次函数 ")).resolves.toEqual({
       id: "lesson-1",
       lesson,
-      videoError: "video quota exceeded"
+      demoError: "local preview failed"
     });
     expect(addedLessons).toEqual([{
       id: "lesson-1",
@@ -242,6 +277,110 @@ describe("registerWorkflowIpcHandlers", () => {
       createdAt: "2026-06-15T01:02:03.000Z"
     }]);
     expect(upsertVideo).not.toHaveBeenCalled();
+  });
+
+  it("links generated lesson history to its local teaching demo path", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const addedLessons: LessonRecord[] = [];
+
+    registerWorkflowIpcHandlers(fakeIpcMain, createBaseDeps({
+      historyStore: {
+        addLesson: async (record: LessonRecord) => { addedLessons.push(record); },
+        addDemo: vi.fn(),
+        upsertVideo: vi.fn(),
+        listLessons: vi.fn(),
+        listDemos: vi.fn(),
+        listVideos: vi.fn()
+      },
+      createId: () => "lesson-1",
+      generateLessonPlan: vi.fn().mockResolvedValue(lesson),
+      startDemoServer: vi.fn().mockResolvedValue({ url: "http://127.0.0.1:8123/", close: vi.fn() })
+    }));
+
+    await fakeIpcMain.handlers.get("lesson:generate")?.({}, " 一次函数 ");
+
+    expect(addedLessons.at(-1)).toEqual(expect.objectContaining({
+      id: "lesson-1",
+      title: lesson.title,
+      demoId: "lesson-1",
+      demoPath: join(tmpDir, "local-demos", "lesson-1")
+    }));
+  });
+
+  it("generates lesson image assets and writes them as separate local courseware files", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const imageAssets = [{
+      title: "故事导入图",
+      prompt: "数轴小路",
+      src: "data:image/png;base64,AQID"
+    }];
+    const generateLessonImages = vi.fn().mockResolvedValue(imageAssets);
+    const renderTeachingDemoHtml = vi.fn().mockReturnValue("<!doctype html><title>lesson images</title>");
+    const deps = createBaseDeps({
+      createId: () => "lesson-1",
+      generateLessonPlan: vi.fn().mockResolvedValue(lesson),
+      generateLessonImages,
+      renderTeachingDemoHtml,
+      startDemoServer: vi.fn().mockResolvedValue({ url: "http://127.0.0.1:8123/", close: vi.fn() })
+    });
+
+    registerWorkflowIpcHandlers(fakeIpcMain, deps);
+
+    await expect(fakeIpcMain.handlers.get("lesson:generate")?.({}, " 一次函数 ")).resolves.toMatchObject({
+      id: "lesson-1",
+      imageAssets,
+      localDemo: {
+        id: "lesson-1",
+        title: lesson.title,
+        url: "http://127.0.0.1:8123/"
+      }
+    });
+    expect(generateLessonImages).toHaveBeenCalledWith({
+      lesson,
+      lessonId: "lesson-1",
+      config: completeSettings.imageModel,
+      client: deps.client,
+      dataDir: tmpDir
+    });
+    expect(renderTeachingDemoHtml).toHaveBeenCalledWith(expect.objectContaining({
+      imageAssets: [expect.objectContaining({
+        title: "故事导入图",
+        prompt: "数轴小路",
+        src: "assets/lesson-images/01-故事导入图.png",
+        localPath: join(tmpDir, "local-demos", "lesson-1", "assets", "lesson-images", "01-故事导入图.png")
+      })]
+    }));
+    await expect(
+      readFile(join(tmpDir, "local-demos", "lesson-1", "assets", "lesson-images", "01-故事导入图.png"))
+    ).resolves.toEqual(Buffer.from([1, 2, 3]));
+  });
+
+  it("keeps the lesson and local demo when lesson image generation fails", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const renderTeachingDemoHtml = vi.fn().mockReturnValue("<!doctype html><title>lesson without images</title>");
+    const deps = createBaseDeps({
+      createId: () => "lesson-1",
+      generateLessonPlan: vi.fn().mockResolvedValue(lesson),
+      generateLessonImages: vi.fn().mockRejectedValue(new Error("image generation failed")),
+      renderTeachingDemoHtml,
+      startDemoServer: vi.fn().mockResolvedValue({ url: "http://127.0.0.1:8123/", close: vi.fn() })
+    });
+
+    registerWorkflowIpcHandlers(fakeIpcMain, deps);
+
+    await expect(fakeIpcMain.handlers.get("lesson:generate")?.({}, " 一次函数 ")).resolves.toEqual({
+      id: "lesson-1",
+      lesson,
+      localDemo: {
+        id: "lesson-1",
+        title: lesson.title,
+        url: "http://127.0.0.1:8123/"
+      },
+      imageError: "image generation failed"
+    });
+    expect(renderTeachingDemoHtml).toHaveBeenCalledWith(expect.not.objectContaining({
+      imageAssets: expect.anything()
+    }));
   });
 
   it("generates a standalone video task and saves it to history", async () => {
@@ -278,6 +417,7 @@ describe("registerWorkflowIpcHandlers", () => {
       script: " Show A then B. ",
       imageDataUrl: "data:image/png;base64,AAA",
       imageSize: "960x960",
+      duration: 15,
       negativePrompt: " blurry "
     })).resolves.toEqual(videoTask);
     expect(createStandaloneVideoTask).toHaveBeenCalledWith({
@@ -287,45 +427,96 @@ describe("registerWorkflowIpcHandlers", () => {
       script: "Show A then B.",
       image: "data:image/png;base64,AAA",
       imageSize: "960x960",
+      duration: 15,
       negativePrompt: "blurry"
     });
     expect(upsertVideo).toHaveBeenCalledWith(videoTask);
   });
 
-  it("returns only a video error when saving a created video task fails", async () => {
+  it("generates a local teaching demo without creating a provider video task", async () => {
     const fakeIpcMain = createFakeIpcMain();
-    const createdAt = "2026-06-15T01:02:03.000Z";
-    const videoTask: VideoRecord = {
-      id: "video-1",
-      lessonId: "lesson-1",
-      requestId: "request-1",
-      status: "InQueue",
-      prompt: lesson.video_prompt,
-      script: lesson.video_script,
-      createdAt,
-      updatedAt: createdAt
-    };
+    const renderTeachingDemoHtml = vi.fn().mockReturnValue("<!doctype html><title>local demo</title>");
+    const createStandaloneVideoTask = vi.fn();
+    const addDemo = vi.fn().mockResolvedValue(undefined);
+    const openExternal = vi.fn().mockResolvedValue(undefined);
+    const deps = createBaseDeps({
+      historyStore: {
+        addLesson: vi.fn(),
+        addDemo,
+        upsertVideo: vi.fn(),
+        listLessons: vi.fn(),
+        listDemos: vi.fn(),
+        listVideos: vi.fn()
+      },
+      createId: () => "local-demo-1",
+      renderTeachingDemoHtml,
+      createStandaloneVideoTask,
+      startDemoServer: vi.fn().mockResolvedValue({
+        url: "http://127.0.0.1:8123/",
+        close: vi.fn()
+      }),
+      openExternal
+    });
+
+    registerWorkflowIpcHandlers(fakeIpcMain, deps);
+
+    await expect(fakeIpcMain.handlers.get("video:generateLocalDemo")?.({}, {
+      prompt: " Show A + B on a number line. ",
+      script: " Draw A. Draw B. "
+    })).resolves.toEqual({
+      id: "local-demo-1",
+      title: "Show A + B on a number line.",
+      url: "http://127.0.0.1:8123/"
+    });
+    expect(renderTeachingDemoHtml).toHaveBeenCalledWith({
+      title: "Show A + B on a number line.",
+      prompt: "Show A + B on a number line.",
+      script: "Draw A. Draw B."
+    });
+    await expect(readFile(join(tmpDir, "local-demos", "local-demo-1", "index.html"), "utf8")).resolves.toContain("local demo");
+    expect(openExternal).toHaveBeenCalledWith("http://127.0.0.1:8123/");
+    expect(addDemo).toHaveBeenCalledWith({
+      id: "local-demo-1",
+      title: "Show A + B on a number line.",
+      problem: "Show A + B on a number line.\n\n脚本：Draw A. Draw B.",
+      kind: "simple",
+      demoPath: join(tmpDir, "local-demos", "local-demo-1"),
+      createdAt: "2026-06-15T03:04:05.000Z"
+    });
+    expect(createStandaloneVideoTask).not.toHaveBeenCalled();
+  });
+
+  it("does not submit a provider video task while generating a lesson", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const createVideoTaskFromLesson = vi.fn();
+    const upsertVideo = vi.fn();
 
     registerWorkflowIpcHandlers(fakeIpcMain, createBaseDeps({
       historyStore: {
         addLesson: vi.fn(),
         addDemo: vi.fn(),
-        upsertVideo: vi.fn().mockRejectedValue(new Error("history write failed")),
+        upsertVideo,
         listLessons: vi.fn(),
         listDemos: vi.fn(),
         listVideos: vi.fn()
       },
       createId: () => "lesson-1",
-      now: () => createdAt,
       generateLessonPlan: vi.fn().mockResolvedValue(lesson),
-      createVideoTaskFromLesson: vi.fn().mockResolvedValue(videoTask)
+      createVideoTaskFromLesson,
+      startDemoServer: vi.fn().mockResolvedValue({ url: "http://127.0.0.1:8123/", close: vi.fn() })
     }));
 
     await expect(fakeIpcMain.handlers.get("lesson:generate")?.({}, " 一次函数 ")).resolves.toEqual({
       id: "lesson-1",
       lesson,
-      videoError: "history write failed"
+      localDemo: {
+        id: "lesson-1",
+        title: lesson.title,
+        url: "http://127.0.0.1:8123/"
+      }
     });
+    expect(createVideoTaskFromLesson).not.toHaveBeenCalled();
+    expect(upsertVideo).not.toHaveBeenCalled();
   });
 
   it("generates a demo, writes index.html, starts the server, opens the URL, and saves demo history", async () => {
@@ -357,6 +548,7 @@ describe("registerWorkflowIpcHandlers", () => {
       renderMotionDemoHtml: vi.fn(),
       renderEquationDemoHtml: vi.fn().mockReturnValue("<!doctype html><title>demo</title>"),
       renderSimpleDemoHtml: vi.fn(),
+      renderTeachingDemoHtml: vi.fn(),
       startDemoServer: vi.fn().mockResolvedValue({ url: "http://127.0.0.1:4321/", close: closeActiveServer }),
       openExternal,
       exportLessonDocx: vi.fn()
@@ -373,6 +565,89 @@ describe("registerWorkflowIpcHandlers", () => {
       problem: "小明买笔",
       kind: "equation",
       demoPath: join(tmpDir, "demos", "demo-1"),
+      createdAt
+    }]);
+  });
+
+  it("lets AI generate the entire problem demo HTML when AI HTML mode is enabled", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const addedDemos: DemoRecord[] = [];
+    const closeActiveServer = vi.fn().mockResolvedValue(undefined);
+    const openExternal = vi.fn().mockResolvedValue(undefined);
+    const createdAt = "2026-06-15T02:03:04.000Z";
+    const aiHtml = "<!doctype html><html><head><title>AI 自主题目演示</title></head><body><button id=\"start\">开始互动</button><script>document.body.dataset.ready='1';</script></body></html>";
+    const client = {
+      chatCompletion: vi.fn().mockResolvedValue(`\`\`\`html\n${aiHtml}\n\`\`\``)
+    };
+    const analyzeProblemForDemo = vi.fn().mockResolvedValue(demoPlan);
+    const renderEquationDemoHtml = vi.fn().mockReturnValue("<!doctype html><title>template</title>");
+
+    registerWorkflowIpcHandlers(fakeIpcMain, {
+      configStore: { load: vi.fn().mockResolvedValue({ ...completeSettings, demoGeneration: { mode: "ai_html" } }) },
+      historyStore: {
+        addLesson: vi.fn(),
+        addDemo: async (record) => { addedDemos.push(record); },
+        upsertVideo: vi.fn(),
+        listLessons: vi.fn(),
+        listDemos: vi.fn(),
+        listVideos: vi.fn()
+      },
+      dataDir: tmpDir,
+      client,
+      createId: () => "ai-demo-1",
+      now: () => createdAt,
+      generateLessonPlan: vi.fn(),
+      createVideoTaskFromLesson: vi.fn(),
+      refreshVideoTaskStatus: vi.fn(),
+      analyzeProblemForDemo,
+      chooseDemoRenderer: vi.fn().mockReturnValue("equation"),
+      renderMotionDemoHtml: vi.fn(),
+      renderEquationDemoHtml,
+      renderSimpleDemoHtml: vi.fn(),
+      renderTeachingDemoHtml: vi.fn(),
+      startDemoServer: vi.fn().mockResolvedValue({ url: "http://127.0.0.1:4321/", close: closeActiveServer }),
+      openExternal,
+      exportLessonDocx: vi.fn()
+    });
+
+    const result = await fakeIpcMain.handlers.get("demo:generate")?.({}, " 小强把除数写错，求正确商 ");
+
+    expect(client.chatCompletion).toHaveBeenCalledWith(expect.objectContaining({
+      apiKey: "text-key",
+      modelName: "text-model",
+      maxTokens: 12000,
+      thinkingBudget: 32768,
+      reasoningEffort: "max",
+      timeoutMs: 900_000,
+      stream: true,
+      messages: expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          content: expect.stringContaining("请独立制作一个完整可交互 HTML 网页")
+        })
+      ])
+    }));
+    expect(analyzeProblemForDemo).not.toHaveBeenCalled();
+    expect(renderEquationDemoHtml).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      id: "ai-demo-1",
+      plan: {
+        kind: "simple",
+        title: "AI 自主题目演示",
+        originalProblem: "小强把除数写错，求正确商",
+        knownValues: [],
+        target: "AI 独立生成可交互网页演示",
+        steps: ["AI 已独立完成教学设计和网页制作"]
+      },
+      url: "http://127.0.0.1:4321/"
+    });
+    await expect(readFile(join(tmpDir, "demos", "ai-demo-1", "index.html"), "utf8")).resolves.toBe(aiHtml);
+    expect(addedDemos).toEqual([{
+      id: "ai-demo-1",
+      title: "AI 自主题目演示",
+      problem: "小强把除数写错，求正确商",
+      kind: "simple",
+      demoPath: join(tmpDir, "demos", "ai-demo-1"),
       createdAt
     }]);
   });
@@ -501,6 +776,7 @@ describe("registerWorkflowIpcHandlers", () => {
       renderMotionDemoHtml: vi.fn(),
       renderEquationDemoHtml: vi.fn(),
       renderSimpleDemoHtml: vi.fn(),
+      renderTeachingDemoHtml: vi.fn(),
       startDemoServer: vi.fn(),
       openExternal: vi.fn(),
       exportLessonDocx
@@ -597,12 +873,104 @@ describe("registerWorkflowIpcHandlers", () => {
       renderMotionDemoHtml: vi.fn(),
       renderEquationDemoHtml: vi.fn(),
       renderSimpleDemoHtml: vi.fn(),
+      renderTeachingDemoHtml: vi.fn(),
       startDemoServer: vi.fn(),
       openExternal: vi.fn(),
       exportLessonDocx: vi.fn()
     });
 
     await expect(fakeIpcMain.handlers.get("history:list")?.({})).resolves.toEqual({ lessons, demos, videos });
+  });
+
+  it("opens a saved demo from history", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const demoPath = join(tmpDir, "demos", "demo-1");
+    const demos: DemoRecord[] = [{
+      id: "demo-1",
+      title: "D",
+      problem: "P",
+      kind: "simple",
+      demoPath,
+      createdAt: "2026-06-15"
+    }];
+    const startDemoServer = vi.fn().mockResolvedValue({
+      url: "http://127.0.0.1:4321/",
+      close: vi.fn()
+    });
+    const openExternal = vi.fn().mockResolvedValue(undefined);
+
+    registerWorkflowIpcHandlers(fakeIpcMain, createBaseDeps({
+      historyStore: {
+        addLesson: vi.fn(),
+        addDemo: vi.fn(),
+        upsertVideo: vi.fn(),
+        listLessons: vi.fn(),
+        listDemos: vi.fn().mockResolvedValue(demos),
+        listVideos: vi.fn()
+      },
+      startDemoServer,
+      openExternal
+    }));
+
+    await expect(fakeIpcMain.handlers.get("demo:open")?.({}, " demo-1 ")).resolves.toBe("http://127.0.0.1:4321/");
+    expect(startDemoServer).toHaveBeenCalledWith(demoPath);
+    expect(openExternal).toHaveBeenCalledWith("http://127.0.0.1:4321/");
+  });
+
+  it("deletes a lesson history record and its linked local HTML demo", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const demoPath = join(tmpDir, "local-demos", "lesson-1");
+    await mkdir(demoPath, { recursive: true });
+    await writeFile(join(demoPath, "index.html"), "<!doctype html><title>lesson</title>", "utf8");
+    let lessons: LessonRecord[] = [{
+      id: "lesson-1",
+      title: "L",
+      topic: "T",
+      markdown: "# L",
+      demoId: "lesson-1",
+      demoPath,
+      createdAt: "2026-06-15"
+    }];
+    let demos: DemoRecord[] = [{
+      id: "lesson-1",
+      title: "L",
+      problem: "P",
+      kind: "simple",
+      demoPath,
+      createdAt: "2026-06-15"
+    }];
+    const deleteLesson = vi.fn(async (id: string) => {
+      const record = lessons.find((item) => item.id === id);
+      lessons = lessons.filter((item) => item.id !== id);
+      return record;
+    });
+    const deleteDemo = vi.fn(async (id: string) => {
+      const record = demos.find((item) => item.id === id);
+      demos = demos.filter((item) => item.id !== id);
+      return record;
+    });
+
+    registerWorkflowIpcHandlers(fakeIpcMain, createBaseDeps({
+      historyStore: {
+        addLesson: vi.fn(),
+        addDemo: vi.fn(),
+        upsertVideo: vi.fn(),
+        listLessons: vi.fn(async () => lessons),
+        listDemos: vi.fn(async () => demos),
+        listVideos: vi.fn(async () => []),
+        deleteLesson,
+        deleteDemo,
+        deleteVideo: vi.fn()
+      }
+    }));
+
+    await expect(fakeIpcMain.handlers.get("history:delete")?.({}, {
+      kind: "lesson",
+      id: "lesson-1"
+    })).resolves.toEqual({ lessons: [], demos: [], videos: [] });
+    expect(deleteLesson).toHaveBeenCalledWith("lesson-1");
+    expect(deleteDemo).toHaveBeenCalledWith("lesson-1");
+    await expect(readFile(join(demoPath, "index.html"), "utf8")).rejects.toThrow();
   });
 
   it("refreshes a video task status and saves the updated record", async () => {
@@ -623,8 +991,13 @@ describe("registerWorkflowIpcHandlers", () => {
       videoUrl: "https://cdn.example.test/video.mp4",
       updatedAt: "2026-06-15T04:05:06.000Z"
     };
+    const downloadedVideo: VideoRecord = {
+      ...refreshedVideo,
+      localVideoPath: join(tmpDir, "videos", "video-1.mp4")
+    };
     const upsertVideo = vi.fn().mockResolvedValue(undefined);
     const refreshVideoTaskStatus = vi.fn().mockResolvedValue(refreshedVideo);
+    const downloadVideoFile = vi.fn().mockResolvedValue(downloadedVideo.localVideoPath);
     const deps = createBaseDeps({
       historyStore: {
         addLesson: vi.fn(),
@@ -634,21 +1007,78 @@ describe("registerWorkflowIpcHandlers", () => {
         listDemos: vi.fn(),
         listVideos: vi.fn().mockResolvedValue([queuedVideo])
       },
-      refreshVideoTaskStatus
+      refreshVideoTaskStatus,
+      downloadVideoFile
     });
 
     registerWorkflowIpcHandlers(fakeIpcMain, deps);
     const handler = fakeIpcMain.handlers.get("video:refresh");
 
     expect(handler).toBeDefined();
-    await expect(handler?.({}, " video-1 ")).resolves.toEqual(refreshedVideo);
+    await expect(handler?.({}, " video-1 ")).resolves.toEqual(downloadedVideo);
     expect(refreshVideoTaskStatus).toHaveBeenCalledWith({
       task: queuedVideo,
       config: completeSettings.videoModel,
       client: deps.client,
       now: deps.now
     });
-    expect(upsertVideo).toHaveBeenCalledWith(refreshedVideo);
+    expect(downloadVideoFile).toHaveBeenCalledWith({
+      dataDir: tmpDir,
+      videoId: "video-1",
+      videoUrl: "https://cdn.example.test/video.mp4"
+    });
+    expect(upsertVideo).toHaveBeenCalledWith(downloadedVideo);
+  });
+
+  it("downloads completed videos into the configured video storage directory", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const customVideoDir = "D:\\teacherHelper-videos";
+    const queuedVideo: VideoRecord = {
+      id: "video-1",
+      requestId: "request-1",
+      status: "InQueue",
+      prompt: "prompt",
+      script: "script",
+      createdAt: "2026-06-15T03:04:05.000Z",
+      updatedAt: "2026-06-15T03:04:05.000Z"
+    };
+    const refreshedVideo: VideoRecord = {
+      ...queuedVideo,
+      status: "Succeed",
+      videoUrl: "https://cdn.example.test/video.mp4",
+      updatedAt: "2026-06-15T04:05:06.000Z"
+    };
+    const downloadVideoFile = vi.fn().mockResolvedValue("D:\\teacherHelper-videos\\video-1.mp4");
+    const upsertVideo = vi.fn().mockResolvedValue(undefined);
+
+    registerWorkflowIpcHandlers(fakeIpcMain, createBaseDeps({
+      configStore: {
+        load: vi.fn().mockResolvedValue({
+          ...completeSettings,
+          videoStorage: { directory: customVideoDir }
+        })
+      },
+      historyStore: {
+        addLesson: vi.fn(),
+        addDemo: vi.fn(),
+        upsertVideo,
+        listLessons: vi.fn(),
+        listDemos: vi.fn(),
+        listVideos: vi.fn().mockResolvedValue([queuedVideo])
+      },
+      refreshVideoTaskStatus: vi.fn().mockResolvedValue(refreshedVideo),
+      downloadVideoFile
+    }));
+
+    await expect(fakeIpcMain.handlers.get("video:refresh")?.({}, "video-1")).resolves.toMatchObject({
+      localVideoPath: "D:\\teacherHelper-videos\\video-1.mp4"
+    });
+    expect(downloadVideoFile).toHaveBeenCalledWith({
+      dataDir: tmpDir,
+      outputDir: customVideoDir,
+      videoId: "video-1",
+      videoUrl: "https://cdn.example.test/video.mp4"
+    });
   });
 
   it("tests knowledge connections using current settings", async () => {
@@ -709,12 +1139,19 @@ describe("registerWorkflowIpcHandlers", () => {
     const items: TextbookIndexItem[] = [{
       kind: "page",
       pageNumber: 1,
+      sourceName: "algebra.pdf",
+      sourcePageNumber: 1,
       imageDataUrl: "data:image/png;base64,AAA"
     }];
     const record: TextbookRecord = {
       id: "book-1",
       title: "七年级数学",
-      sourceName: "local.pdf",
+      sourceName: "algebra.pdf, geometry.pdf",
+      sourceNames: ["algebra.pdf", "geometry.pdf"],
+      sources: [
+        { name: "algebra.pdf", pageCount: 1, itemCount: 1 },
+        { name: "geometry.pdf", pageCount: 0, itemCount: 0 }
+      ],
       collectionName: "teacherhelper_textbook_visual",
       pageCount: 1,
       itemCount: 1,
@@ -737,14 +1174,14 @@ describe("registerWorkflowIpcHandlers", () => {
 
     await expect(fakeIpcMain.handlers.get("textbook:index")?.({}, {
       title: " 七年级数学 ",
-      sourceName: "local.pdf",
+      sourceNames: ["algebra.pdf", "geometry.pdf"],
       items
     })).resolves.toEqual(record);
     expect(localQdrantManager.ensureRunning).toHaveBeenCalledWith(completeSettings);
     expect(deps.indexTextbook).toHaveBeenCalledWith({
       id: "book-1",
       title: "七年级数学",
-      sourceName: "local.pdf",
+      sourceNames: ["algebra.pdf", "geometry.pdf"],
       items,
       settings: completeSettings,
       embeddingClient: deps.client,
@@ -772,6 +1209,7 @@ describe("registerWorkflowIpcHandlers", () => {
     const searchResults: TextbookSearchResult[] = [{
       id: "point-1",
       score: 0.9,
+      rankingSource: "qdrant",
       textbookId: "book-1",
       title: "七年级数学",
       sourceName: "local.pdf",

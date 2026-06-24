@@ -20,7 +20,11 @@ describe("registerSettingsIpcHandlers", () => {
     const settings: AppSettings = {
       textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
       videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
+      imageModel: { apiKey: "image-key", modelName: "Tongyi-MAI/Z-Image" },
       embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      rerankerModel: { apiKey: "rerank-key", modelName: "Qwen/Qwen3-VL-Reranker-8B" },
+      demoGeneration: { mode: "template" },
+      videoStorage: { directory: "" },
       qdrant: {
         mode: "remote",
         url: "https://cluster.example.qdrant.io",

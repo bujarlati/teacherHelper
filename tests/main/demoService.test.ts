@@ -28,6 +28,30 @@ function equationPlan(overrides: Partial<ProblemDemoPlan> = {}): ProblemDemoPlan
   };
 }
 
+function motionPlan(overrides: Partial<ProblemDemoPlan> = {}): ProblemDemoPlan {
+  return {
+    kind: "motion",
+    title: "行程问题",
+    originalProblem: "A、B 两地相距 1000 米，小明速度 2 米/秒，需要几秒？",
+    knownValues: [
+      { label: "路程", value: 1000, unit: "米" },
+      { label: "速度", value: 2, unit: "米/秒" }
+    ],
+    target: "求小明走完全程需要的时间",
+    steps: ["找到路程和速度", "用时间=路程÷速度", "1000÷2=500"],
+    motion: {
+      startLabel: "A 地",
+      endLabel: "B 地",
+      distance: 1000,
+      distanceUnit: "米",
+      speed: 2,
+      speedUnit: "米/秒",
+      answerSeconds: 500
+    },
+    ...overrides
+  };
+}
+
 describe("buildAnalyzeProblemPrompt", () => {
   it("tells the model how to classify demo kinds and return JSON only", () => {
     const messages = buildAnalyzeProblemPrompt("小车每秒行 3 米，行 12 米需要几秒？");
@@ -38,11 +62,58 @@ describe("buildAnalyzeProblemPrompt", () => {
     expect(combined).toContain("只返回 JSON");
     expect(combined).toContain("路程/速度/时间题 -> motion");
     expect(combined).toContain("方程应用题 -> equation");
+    expect(combined).toContain("knownValues 可以为空数组");
+    expect(combined).toContain("{label,value,unit?}");
+    expect(combined).toContain("steps 必须是字符串数组");
+    expect(combined).toContain("targetQuantity");
+    expect(combined).toContain("answerLabel");
+    expect(combined).toContain("answerValue");
+    expect(combined).toContain("不要限制为 time/distance/speed");
+    expect(combined).toContain("不能为了省字段把适合 motion 或 equation 的题目改成 simple");
     expect(combined).toContain("小车每秒行 3 米");
   });
 });
 
 describe("analyzeProblemForDemo", () => {
+  it("asks the model for a teaching design brief before the structured demo plan", async () => {
+    const fakeClient = {
+      chatCompletion: vi.fn()
+        .mockResolvedValueOnce("教学设计预案：先用生活情境引入，再让学生观察数量关系，最后分步演示。")
+        .mockResolvedValueOnce(JSON.stringify(equationPlan()))
+    };
+
+    await expect(
+      analyzeProblemForDemo({
+        problem: "小明今年 12 岁，比妹妹年龄的 2 倍少 4 岁，妹妹几岁？",
+        config: { apiKey: "key", modelName: "zai-org/GLM-5.2" },
+        client: fakeClient
+      })
+    ).resolves.toEqual(equationPlan());
+
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(2);
+    expect(fakeClient.chatCompletion).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      maxTokens: 1800,
+      thinkingBudget: 32768,
+      messages: expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          content: expect.stringContaining("先完成一份教学演示设计预案")
+        })
+      ])
+    }));
+    expect(fakeClient.chatCompletion).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      maxTokens: 8192,
+      thinkingBudget: 32768,
+      responseFormat: { type: "json_object" },
+      messages: expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          content: expect.stringContaining("教学设计预案：先用生活情境引入")
+        })
+      ])
+    }));
+  });
+
   it("parses equation demo plan JSON returned by the injected client", async () => {
     const fakeClient = {
       chatCompletion: vi.fn(async () => JSON.stringify(equationPlan()))
@@ -56,15 +127,126 @@ describe("analyzeProblemForDemo", () => {
 
     expect(plan.kind).toBe("equation");
     expect(plan.equation?.expression).toBe("2x - 4 = 12");
-    expect(fakeClient.chatCompletion).toHaveBeenCalledWith({
+    expect(fakeClient.chatCompletion).toHaveBeenNthCalledWith(2, {
       apiKey: "key",
       modelName: "Qwen/Qwen3-32B",
-      messages: buildAnalyzeProblemPrompt("小明今年 12 岁，比妹妹年龄的 2 倍少 4 岁，妹妹几岁？"),
-      maxTokens: 1800,
-      temperature: 0.2,
+      messages: buildAnalyzeProblemPrompt(
+        "小明今年 12 岁，比妹妹年龄的 2 倍少 4 岁，妹妹几岁？",
+        JSON.stringify(equationPlan())
+      ),
+      maxTokens: 8192,
+      temperature: 0.15,
       responseFormat: { type: "json_object" },
-      thinkingBudget: 64
+      thinkingBudget: 32768
     });
+  });
+
+  it("keeps a high-quality demo when the model returns rich step objects", async () => {
+    const fakeClient = {
+      chatCompletion: vi.fn(async () => JSON.stringify(equationPlan({
+        steps: [
+          { title: "设未知数", description: "设妹妹年龄为 x 岁" },
+          { title: "列方程", detail: "根据题意列方程 2x - 4 = 12" },
+          { text: "解得 x = 8" }
+        ] as unknown as string[]
+      })))
+    };
+
+    await expect(
+      analyzeProblemForDemo({
+        problem: "小明今年 12 岁，比妹妹年龄的 2 倍少 4 岁，妹妹几岁？",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({
+      kind: "equation",
+      steps: ["设未知数：设妹妹年龄为 x 岁", "列方程：根据题意列方程 2x - 4 = 12", "解得 x = 8"]
+    });
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(2);
+  });
+
+  it("normalizes nested step objects and arrays from complex motion problems", async () => {
+    const fakeClient = {
+      chatCompletion: vi.fn(async () => JSON.stringify(motionPlan({
+        title: "往返行程问题",
+        originalProblem: "汽车从甲地到乙地，去时每小时行60千米，比计划时间早到1小时；返回时，每小时行40千米，比计划时间迟到1小时。求甲乙两地的距离。",
+        target: "求甲乙两地的距离",
+        steps: [
+          {
+            teacher: { prompt: "比较去程和计划时间", board: "去程时间 = 计划时间 - 1" },
+            visual: { cue: "60 千米/小时更快，所以提前到达" }
+          },
+          [
+            { text: "比较回程和计划时间" },
+            { detail: "回程时间 = 计划时间 + 1" }
+          ],
+          {
+            reasoning: {
+              setup: "设甲乙两地距离为 x 千米",
+              formula: "x ÷ 60 + 1 = x ÷ 40 - 1"
+            }
+          }
+        ] as unknown as string[],
+        motion: {
+          startLabel: "甲地",
+          endLabel: "乙地",
+          distance: 120,
+          distanceUnit: "千米",
+          speed: 60,
+          speedUnit: "千米/小时",
+          answerSeconds: 7200
+        }
+      })))
+    };
+
+    await expect(
+      analyzeProblemForDemo({
+        problem: "汽车从甲地到乙地，去时每小时行60千米，比计划时间早到1小时；返回时，每小时行40千米，比计划时间迟到1小时。求甲乙两地的距离。",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({
+      kind: "motion",
+      steps: [
+        "比较去程和计划时间；去程时间 = 计划时间 - 1；60 千米/小时更快，所以提前到达",
+        "比较回程和计划时间；回程时间 = 计划时间 + 1",
+        "设甲乙两地距离为 x 千米；x ÷ 60 + 1 = x ÷ 40 - 1"
+      ]
+    });
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(2);
+  });
+
+  it("normalizes common known value shapes before validating a demo plan", async () => {
+    const fakeClient = {
+      chatCompletion: vi.fn(async () => JSON.stringify(equationPlan({
+        title: "错题纠正",
+        originalProblem: "小强在计算除法时，把除数 76 写成 67，结果得到的商是 15 还余 5。正确的商应该是几？",
+        knownValues: [
+          { name: "正确除数", amount: 76 },
+          { key: "误写除数", text: "67" },
+          "错误商=15",
+          { label: "余数", count: 5 }
+        ] as unknown as ProblemDemoPlan["knownValues"],
+        target: "求正确的商"
+      })))
+    };
+
+    await expect(
+      analyzeProblemForDemo({
+        problem: "小强在计算除法时，把除数 76 写成 67，结果得到的商是 15 还余 5。正确的商应该是几？",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({
+      title: "错题纠正",
+      knownValues: [
+        { label: "正确除数", value: 76 },
+        { label: "误写除数", value: "67" },
+        { label: "已知条件 3", value: "错误商=15" },
+        { label: "余数", value: 5 }
+      ]
+    });
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(2);
   });
 
   it("throws a clear Chinese error when text model config is blank", async () => {
@@ -96,7 +278,7 @@ describe("analyzeProblemForDemo", () => {
     ).resolves.toMatchObject({ kind: "equation", title: "年龄问题" });
   });
 
-  it("rejects unparseable JSON with a clear Chinese error", async () => {
+  it("keeps retrying unparseable JSON and then returns a clear Chinese error", async () => {
     const fakeClient = {
       chatCompletion: vi.fn(async () => "{ bad json")
     };
@@ -107,12 +289,16 @@ describe("analyzeProblemForDemo", () => {
         config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
         client: fakeClient
       })
-    ).rejects.toThrow("模型返回的题目演示 JSON 无法解析，请重试。");
+    ).rejects.toThrow("模型连续 5 次未返回可解析的题目演示 JSON，请重试。");
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(6);
   });
 
-  it("rejects schema-invalid model output with a clear Chinese error", async () => {
+  it("asks the model again when the first demo plan is schema-incomplete", async () => {
     const fakeClient = {
-      chatCompletion: vi.fn(async () => JSON.stringify({ kind: "equation", title: "缺少字段" }))
+      chatCompletion: vi.fn()
+        .mockResolvedValueOnce("教学设计预案：先理解题意，再补齐结构。")
+        .mockResolvedValueOnce(JSON.stringify({ kind: "equation", title: "缺少字段" }))
+        .mockResolvedValueOnce(JSON.stringify(equationPlan()))
     };
 
     await expect(
@@ -121,7 +307,102 @@ describe("analyzeProblemForDemo", () => {
         config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
         client: fakeClient
       })
-    ).rejects.toThrow("模型返回的题目演示结构不完整，请重试。");
+    ).resolves.toEqual(equationPlan());
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(3);
+    expect(fakeClient.chatCompletion).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      maxTokens: 8192,
+      thinkingBudget: 32768,
+      messages: expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          content: expect.stringContaining("上次错误：结构字段不完整")
+        }),
+        expect.objectContaining({
+          role: "user",
+          content: expect.stringContaining("equation")
+        })
+      ])
+    }));
+  });
+
+  it("does not downgrade specialized demos and retries until motion data is complete", async () => {
+    const fakeClient = {
+      chatCompletion: vi.fn()
+        .mockResolvedValueOnce("教学设计预案：用路径动画解释路程、速度、时间。")
+        .mockResolvedValueOnce(JSON.stringify({
+          kind: "motion",
+          title: "行程问题",
+          originalProblem: "A、B 两地相距 1000 米，小明速度 2 米/秒，需要几秒？",
+          knownValues: [{ label: "距离", value: 1000, unit: "米" }],
+          target: "求时间",
+          steps: ["用时间=路程÷速度"]
+        }))
+        .mockResolvedValueOnce(JSON.stringify(motionPlan()))
+    };
+
+    await expect(
+      analyzeProblemForDemo({
+        problem: "A、B 两地相距 1000 米，小明速度 2 米/秒，需要几秒？",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toEqual(motionPlan());
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(3);
+  });
+
+  it("retries invalid JSON before returning a parse error", async () => {
+    const fakeClient = {
+      chatCompletion: vi.fn()
+        .mockResolvedValueOnce("教学设计预案：先设关系，再生成结构。")
+        .mockResolvedValueOnce("{ bad json")
+        .mockResolvedValueOnce("{ still bad")
+        .mockResolvedValueOnce(JSON.stringify(equationPlan()))
+    };
+
+    await expect(
+      analyzeProblemForDemo({
+        problem: "列方程解决年龄问题",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toEqual(equationPlan());
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(4);
+  });
+
+  it("keeps trying up to the fifth attempt before giving up on a useful demo", async () => {
+    const fakeClient = {
+      chatCompletion: vi.fn()
+        .mockResolvedValueOnce("教学设计预案：逐步补齐结构。")
+        .mockResolvedValueOnce(JSON.stringify({ kind: "equation", title: "缺少字段 1" }))
+        .mockResolvedValueOnce(JSON.stringify({ kind: "equation", title: "缺少字段 2" }))
+        .mockResolvedValueOnce(JSON.stringify({ kind: "equation", title: "缺少字段 3" }))
+        .mockResolvedValueOnce(JSON.stringify({ kind: "equation", title: "缺少字段 4" }))
+        .mockResolvedValueOnce(JSON.stringify(equationPlan({ title: "最终成功" })))
+    };
+
+    await expect(
+      analyzeProblemForDemo({
+        problem: "列方程解决年龄问题",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({ title: "最终成功" });
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(6);
+  });
+
+  it("keeps failing after all repair attempts return incomplete JSON", async () => {
+    const fakeClient = {
+      chatCompletion: vi.fn(async () => JSON.stringify({ kind: "equation", title: "仍然缺字段" }))
+    };
+
+    await expect(
+      analyzeProblemForDemo({
+        problem: "列方程解决年龄问题",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).rejects.toThrow("模型连续 5 次未返回完整题目演示结构");
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(6);
   });
 });
 

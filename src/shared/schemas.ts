@@ -6,8 +6,11 @@ export const modelConfigSchema = z.object({
 });
 
 export const defaultEmbeddingModelName = "Qwen/Qwen3-VL-Embedding-8B";
+export const defaultRerankerModelName = "Qwen/Qwen3-VL-Reranker-8B";
+export const defaultImageModelName = "Tongyi-MAI/Z-Image";
 export const defaultQdrantUrl = "http://127.0.0.1:6333";
 export const defaultQdrantCollectionPrefix = "teacherhelper";
+export const defaultVideoStorageDirectory = "";
 
 export const qdrantConfigSchema = z.object({
   mode: z.enum(["local", "remote"]).default("local"),
@@ -16,18 +19,40 @@ export const qdrantConfigSchema = z.object({
   collectionPrefix: z.string().default(defaultQdrantCollectionPrefix)
 });
 
+export const demoGenerationConfigSchema = z.object({
+  mode: z.enum(["template", "ai_html"]).default("template")
+});
+
+export const videoStorageConfigSchema = z.object({
+  directory: z.string().default(defaultVideoStorageDirectory)
+});
+
 export const appSettingsSchema = z.object({
   textModel: modelConfigSchema,
   videoModel: modelConfigSchema,
+  imageModel: modelConfigSchema.default({
+    apiKey: "",
+    modelName: defaultImageModelName
+  }),
   embeddingModel: modelConfigSchema.default({
     apiKey: "",
     modelName: defaultEmbeddingModelName
+  }),
+  rerankerModel: modelConfigSchema.default({
+    apiKey: "",
+    modelName: defaultRerankerModelName
   }),
   qdrant: qdrantConfigSchema.default({
     mode: "local",
     url: defaultQdrantUrl,
     apiKey: "",
     collectionPrefix: defaultQdrantCollectionPrefix
+  }),
+  demoGeneration: demoGenerationConfigSchema.default({
+    mode: "template"
+  }),
+  videoStorage: videoStorageConfigSchema.default({
+    directory: defaultVideoStorageDirectory
   })
 });
 
@@ -78,7 +103,11 @@ export const problemDemoPlanSchema = z.object({
     distanceUnit: z.string().min(1),
     speed: z.number().positive(),
     speedUnit: z.string().min(1),
-    answerSeconds: z.number().positive()
+    answerSeconds: z.number().positive(),
+    targetQuantity: z.string().min(1).optional(),
+    answerLabel: z.string().min(1).optional(),
+    answerValue: z.union([z.number(), z.string()]).optional(),
+    answerUnit: z.string().optional()
   }).optional(),
   equation: z.object({
     variable: z.string().min(1),

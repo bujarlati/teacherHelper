@@ -3,8 +3,11 @@ import { join } from "node:path";
 import {
   appSettingsSchema,
   defaultEmbeddingModelName,
+  defaultImageModelName,
   defaultQdrantCollectionPrefix,
-  defaultQdrantUrl
+  defaultQdrantUrl,
+  defaultRerankerModelName,
+  defaultVideoStorageDirectory
 } from "../shared/schemas.js";
 import type { AppSettings } from "../shared/types.js";
 
@@ -12,13 +15,17 @@ function createEmptySettings(): AppSettings {
   return {
     textModel: { apiKey: "", modelName: "" },
     videoModel: { apiKey: "", modelName: "" },
+    imageModel: { apiKey: "", modelName: defaultImageModelName },
     embeddingModel: { apiKey: "", modelName: defaultEmbeddingModelName },
+    rerankerModel: { apiKey: "", modelName: defaultRerankerModelName },
     qdrant: {
       mode: "local",
       url: defaultQdrantUrl,
       apiKey: "",
       collectionPrefix: defaultQdrantCollectionPrefix
-    }
+    },
+    demoGeneration: { mode: "template" },
+    videoStorage: { directory: defaultVideoStorageDirectory }
   };
 }
 

@@ -2,8 +2,11 @@ import { FormEvent, useEffect, useState } from "react";
 import type { ReactElement } from "react";
 import {
   defaultEmbeddingModelName,
+  defaultImageModelName,
   defaultQdrantCollectionPrefix,
-  defaultQdrantUrl
+  defaultQdrantUrl,
+  defaultRerankerModelName,
+  defaultVideoStorageDirectory
 } from "../../shared/schemas";
 import type { AppSettings, LocalQdrantStatus } from "../../shared/types";
 import { api } from "../api";
@@ -18,15 +21,29 @@ function createEmptySettings(): AppSettings {
       apiKey: "",
       modelName: ""
     },
+    imageModel: {
+      apiKey: "",
+      modelName: defaultImageModelName
+    },
     embeddingModel: {
       apiKey: "",
       modelName: defaultEmbeddingModelName
+    },
+    rerankerModel: {
+      apiKey: "",
+      modelName: defaultRerankerModelName
     },
     qdrant: {
       mode: "local",
       url: defaultQdrantUrl,
       apiKey: "",
       collectionPrefix: defaultQdrantCollectionPrefix
+    },
+    demoGeneration: {
+      mode: "template"
+    },
+    videoStorage: {
+      directory: defaultVideoStorageDirectory
     }
   };
 }
@@ -172,6 +189,26 @@ export function SettingsPage(): ReactElement {
         </fieldset>
 
         <fieldset>
+          <legend>题目演示</legend>
+          <label>
+            <span>题目演示模式</span>
+            <select
+              disabled={controlsDisabled}
+              value={settings.demoGeneration.mode}
+              onChange={(event) => setSettings({
+                ...settings,
+                demoGeneration: {
+                  mode: event.target.value === "ai_html" ? "ai_html" : "template"
+                }
+              })}
+            >
+              <option value="template">稳定模板生成</option>
+              <option value="ai_html">AI 独立生成完整网页</option>
+            </select>
+          </label>
+        </fieldset>
+
+        <fieldset>
           <legend>视频模型</legend>
           <label>
             <span>视频 API Key</span>
@@ -195,6 +232,48 @@ export function SettingsPage(): ReactElement {
               onChange={(event) => setSettings({
                 ...settings,
                 videoModel: { ...settings.videoModel, modelName: event.target.value }
+              })}
+            />
+          </label>
+          <label>
+            <span>视频保存目录</span>
+            <input
+              autoComplete="off"
+              disabled={controlsDisabled}
+              value={settings.videoStorage.directory}
+              onChange={(event) => setSettings({
+                ...settings,
+                videoStorage: { directory: event.target.value }
+              })}
+              placeholder="留空则保存到本机应用数据目录"
+            />
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>图片模型</legend>
+          <label>
+            <span>图片 API Key</span>
+            <input
+              type="password"
+              autoComplete="off"
+              disabled={controlsDisabled}
+              value={settings.imageModel.apiKey}
+              onChange={(event) => setSettings({
+                ...settings,
+                imageModel: { ...settings.imageModel, apiKey: event.target.value }
+              })}
+            />
+          </label>
+          <label>
+            <span>图片模型名</span>
+            <input
+              autoComplete="off"
+              disabled={controlsDisabled}
+              value={settings.imageModel.modelName}
+              onChange={(event) => setSettings({
+                ...settings,
+                imageModel: { ...settings.imageModel, modelName: event.target.value }
               })}
             />
           </label>
@@ -224,6 +303,35 @@ export function SettingsPage(): ReactElement {
               onChange={(event) => setSettings({
                 ...settings,
                 embeddingModel: { ...settings.embeddingModel, modelName: event.target.value }
+              })}
+            />
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>重排序模型</legend>
+          <label>
+            <span>重排序 API Key</span>
+            <input
+              type="password"
+              autoComplete="off"
+              disabled={controlsDisabled}
+              value={settings.rerankerModel.apiKey}
+              onChange={(event) => setSettings({
+                ...settings,
+                rerankerModel: { ...settings.rerankerModel, apiKey: event.target.value }
+              })}
+            />
+          </label>
+          <label>
+            <span>重排序模型名</span>
+            <input
+              autoComplete="off"
+              disabled={controlsDisabled}
+              value={settings.rerankerModel.modelName}
+              onChange={(event) => setSettings({
+                ...settings,
+                rerankerModel: { ...settings.rerankerModel, modelName: event.target.value }
               })}
             />
           </label>

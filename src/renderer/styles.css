@@ -34,6 +34,23 @@ button {
   cursor: pointer;
 }
 
+a.secondary-link {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #315b50;
+  border-radius: 6px;
+  padding: 0 16px;
+  color: #315b50;
+  background: #ffffff;
+  text-decoration: none;
+}
+
+a.secondary-link:hover {
+  background: #edf4ef;
+}
+
 button:hover:not(:disabled) {
   background: #264a41;
 }
@@ -145,6 +162,13 @@ h1 {
 
 .status-error {
   color: #a34035;
+}
+
+.inline-warning {
+  display: block;
+  margin-top: 4px;
+  color: #a34035;
+  font-weight: 600;
 }
 
 .settings-form {
@@ -264,6 +288,19 @@ textarea:focus {
   margin-bottom: 22px;
 }
 
+.refinement-form {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #d2d9d5;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfcfa;
+}
+
+.refinement-form textarea {
+  min-height: 88px;
+}
+
 .compact-fieldset {
   grid-template-columns: minmax(0, 1fr) 180px;
   padding: 16px;
@@ -381,6 +418,46 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.lesson-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.lesson-image-card {
+  overflow: hidden;
+  display: grid;
+  margin: 0;
+  border: 1px solid #d2d9d5;
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.lesson-image-card img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  display: block;
+  background: #eef1ed;
+}
+
+.lesson-image-card figcaption {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.lesson-image-card strong {
+  color: #1f2d2b;
+  font-size: 15px;
+}
+
+.lesson-image-card span {
+  color: #53615d;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .history-grid {
   display: grid;
   gap: 24px;
@@ -413,6 +490,31 @@ h2 {
   background: #f3f8f4;
 }
 
+.result-thumbnail {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border: 1px solid #d2d9d5;
+  border-radius: 6px;
+  object-fit: contain;
+  background: #eef1ed;
+}
+
+.result-thumbnail-empty {
+  display: grid;
+  place-items: center;
+  color: #65726f;
+  font-size: 14px;
+}
+
+.result-preview-image {
+  width: 100%;
+  max-height: 68vh;
+  border: 1px solid #d2d9d5;
+  border-radius: 8px;
+  object-fit: contain;
+  background: #fbfcfa;
+}
+
 .record-list strong,
 .record-list span {
   min-width: 0;
@@ -422,6 +524,19 @@ h2 {
 .record-list span {
   color: #53615d;
   line-height: 1.5;
+}
+
+.video-preview-block {
+  display: grid;
+  gap: 10px;
+}
+
+.video-preview {
+  width: 100%;
+  max-height: 420px;
+  border: 1px solid #d2d9d5;
+  border-radius: 8px;
+  background: #202927;
 }
 
 .record-actions {

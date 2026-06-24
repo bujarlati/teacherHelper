@@ -58,6 +58,113 @@ describe("renderMotionDemoHtml", () => {
     expect(html).toContain("500 秒");
   });
 
+  it("renders distance as the answer when the motion target asks for distance", () => {
+    const html = renderMotionDemoHtml(
+      motionPlan({
+        title: "汽车往返甲乙两地的行程问题",
+        originalProblem: "汽车从甲地到乙地，去时每小时行60千米，比计划时间早到1小时；返回时，每小时行40千米，比计划时间迟到1小时。求甲乙两地的距离。",
+        knownValues: [
+          { label: "去时速度", value: 60, unit: "千米/时" },
+          { label: "返回速度", value: 40, unit: "千米/时" }
+        ],
+        target: "求甲乙两地的距离",
+        steps: [
+          "去时用时比返回少 2 小时",
+          "设距离为 S，列式 S/40 - S/60 = 2",
+          "求出 S = 240 千米"
+        ],
+        motion: {
+          startLabel: "甲地",
+          endLabel: "乙地",
+          distance: 240,
+          distanceUnit: "千米",
+          speed: 60,
+          speedUnit: "千米/时",
+          answerSeconds: 14400
+        }
+      })
+    );
+
+    expect(html).toContain("<strong>求甲乙两地的距离：</strong>240 千米");
+    expect(html).not.toContain("<strong>答案：</strong>14400 秒");
+  });
+
+  it("uses a relationship comparison board for round-trip distance problems", () => {
+    const html = renderMotionDemoHtml(
+      motionPlan({
+        title: "汽车往返甲乙两地的行程问题",
+        originalProblem: "汽车从甲地到乙地，去时每小时行60千米，比计划时间早到1小时；返回时，每小时行40千米，比计划时间迟到1小时。求甲乙两地的距离。",
+        knownValues: [
+          { label: "去时速度", value: 60, unit: "千米/时" },
+          { label: "返回速度", value: 40, unit: "千米/时" },
+          { label: "去时提前", value: 1, unit: "小时" },
+          { label: "返回迟到", value: 1, unit: "小时" }
+        ],
+        target: "求甲乙两地的距离",
+        steps: [
+          "去时用时比返回少 2 小时",
+          "设距离为 S，列式 S/40 - S/60 = 2",
+          "求出 S = 240 千米"
+        ],
+        motion: {
+          startLabel: "甲地",
+          endLabel: "乙地",
+          distance: 240,
+          distanceUnit: "千米",
+          speed: 60,
+          speedUnit: "千米/时",
+          answerSeconds: 14400,
+          answerLabel: "甲乙两地距离",
+          answerValue: 240,
+          answerUnit: "千米"
+        }
+      })
+    );
+
+    expect(html).toContain("数量关系对比");
+    expect(html).toContain("同一段路程");
+    expect(html).toContain("去时速度快，用时比计划少");
+    expect(html).toContain("返回速度慢，用时比计划多");
+    expect(html).toContain("时间差：少 1 小时 + 多 1 小时 = 2 小时");
+    expect(html).toContain("S/40 - S/60 = 2");
+    expect(html).not.toContain("汽车沿轨道移动");
+  });
+
+  it("does not show round-trip time-difference wording for one-way motion problems", () => {
+    const html = renderMotionDemoHtml(motionPlan());
+
+    expect(html).toContain("基本关系：路程 = 速度 × 时间");
+    expect(html).not.toContain("时间差来自“提前”和“迟到”的合并比较");
+    expect(html).not.toContain("返回速度慢，用时比计划多");
+  });
+
+  it("renders the final answer with an open-ended question target label", () => {
+    const html = renderMotionDemoHtml(
+      motionPlan({
+        title: "相遇问题",
+        originalProblem: "甲乙两车相向而行，求相遇地点距离甲地多少千米。",
+        target: "求相遇地点距离甲地多少千米",
+        steps: ["先求相遇时间", "再求甲车行驶路程", "相遇地点距离甲地 100 千米"],
+        motion: {
+          startLabel: "甲地",
+          endLabel: "乙地",
+          distance: 160,
+          distanceUnit: "千米",
+          speed: 50,
+          speedUnit: "千米/时",
+          answerSeconds: 7200,
+          targetQuantity: "相遇地点距离甲地",
+          answerLabel: "相遇地点距离甲地",
+          answerValue: 100,
+          answerUnit: "千米"
+        } as ProblemDemoPlan["motion"]
+      })
+    );
+
+    expect(html).toContain("<strong>相遇地点距离甲地：</strong>100 千米");
+    expect(html).not.toContain("<strong>答案：</strong>100 千米");
+  });
+
   it("throws when motion data is missing", () => {
     const plan = motionPlan({ motion: undefined });
 
@@ -92,23 +199,37 @@ describe("renderMotionDemoHtml", () => {
     expect(html).toContain('id="track"');
   });
 
-  it("uses fractional answer seconds as the animation duration", () => {
+  it("includes teacher interaction tools for step-by-step classroom explanation", () => {
+    const html = renderMotionDemoHtml(motionPlan());
+
+    expect(html).toContain('id="prev-step"');
+    expect(html).toContain('id="next-step"');
+    expect(html).toContain('id="step-focus"');
+    expect(html).toContain('data-step-index="0"');
+    expect(html).toContain('id="annotation-canvas"');
+    expect(html).toContain('id="clear-annotations"');
+    expect(html).toContain('draggable="true"');
+    expect(html).toContain('data-drag-marker');
+  });
+
+  it("uses a classroom playback duration instead of the real travel seconds", () => {
     const html = renderMotionDemoHtml(
       motionPlan({
         motion: {
           startLabel: "起点",
           endLabel: "终点",
-          distance: 1,
-          distanceUnit: "m",
-          speed: 2,
-          speedUnit: "m/s",
-          answerSeconds: 0.5
+          distance: 240,
+          distanceUnit: "千米",
+          speed: 60,
+          speedUnit: "千米/时",
+          answerSeconds: 14400
         }
       })
     );
 
-    expect(html).toContain("const totalSeconds = 0.5;");
-    expect(html).not.toContain("const totalSeconds = 1;");
+    expect(html).toContain("const playbackSeconds = 6;");
+    expect(html).toContain("const realSeconds = 14400;");
+    expect(html).not.toContain("const totalSeconds = 14400;");
   });
 
   it("runs generated playback controls in the browser script", () => {
@@ -159,20 +280,50 @@ describe("renderMotionDemoHtml", () => {
     const pause = document.getElementById("pause");
     const replay = document.getElementById("replay");
 
-    expect(timer?.textContent).toBe("计时：0.0 秒");
+    expect(timer?.textContent).toBe("演示：0.0 秒");
     expect(walker?.style.transform).toBe("translateX(0px)");
 
     start?.click();
-    now = 250;
+    now = 3000;
     frames.shift()?.(now);
 
-    expect(timer?.textContent).toBe("计时：0.3 秒");
+    expect(timer?.textContent).toBe("演示：3.0 秒");
     expect(walker?.style.transform).toBe("translateX(48px)");
 
     pause?.click();
     replay?.click();
 
-    expect(timer?.textContent).toBe("计时：0.0 秒");
+    expect(timer?.textContent).toBe("演示：0.0 秒");
     expect(walker?.style.transform).toBe("translateX(0px)");
+  });
+
+  it("advances the focused teaching step with the next-step button", () => {
+    let now = 0;
+    const frames: FrameRequestCallback[] = [];
+    const html = renderMotionDemoHtml(motionPlan());
+    const dom = new JSDOM(html, {
+      pretendToBeVisual: true,
+      runScripts: "dangerously",
+      beforeParse(window) {
+        Object.defineProperty(window.performance, "now", {
+          configurable: true,
+          value: () => now
+        });
+        window.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+          frames.push(callback);
+          return frames.length;
+        };
+        window.cancelAnimationFrame = () => undefined;
+      }
+    });
+    const document = dom.window.document;
+    const stepFocus = document.getElementById("step-focus");
+    const nextStep = document.getElementById("next-step");
+
+    expect(stepFocus?.textContent).toContain("时间 = 路程 ÷ 速度");
+
+    nextStep?.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+
+    expect(stepFocus?.textContent).toContain("1000 ÷ 2 = 500");
   });
 });

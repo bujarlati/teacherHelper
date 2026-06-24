@@ -1,6 +1,6 @@
-import { ChangeEvent, FormEvent, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import type { ReactElement } from "react";
-import type { VideoImageSize } from "../../shared/types";
+import type { LocalTeachingDemoResult, VideoImageSize } from "../../shared/types";
 import type { VideoRecord } from "../../main/historyStore";
 import { api } from "../api";
 
@@ -12,18 +12,67 @@ type StatusMessage = {
 };
 
 const imageSizes: VideoImageSize[] = ["1280x720", "720x1280", "960x960"];
+const videoAutoRefreshMs = 30_000;
+const queueClockRefreshMs = 60_000;
+const longQueueWarningMinutes = 30;
+const minVideoDurationSeconds = 4;
+const maxVideoDurationSeconds = 60;
 
 export function VideoPage(): ReactElement {
   const [prompt, setPrompt] = useState("");
   const [script, setScript] = useState("");
   const [imageSize, setImageSize] = useState<VideoImageSize>("1280x720");
+  const [duration, setDuration] = useState(maxVideoDurationSeconds);
   const [negativePrompt, setNegativePrompt] = useState("");
   const [imageFile, setImageFile] = useState<File | undefined>();
   const [video, setVideo] = useState<VideoRecord | undefined>();
+  const [recentVideos, setRecentVideos] = useState<VideoRecord[]>([]);
+  const [localDemo, setLocalDemo] = useState<LocalTeachingDemoResult | undefined>();
+  const [videoFeedback, setVideoFeedback] = useState("");
   const [status, setStatus] = useState<StatusMessage>({ tone: "muted", text: "输入提示词后生成视频。" });
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isGeneratingLocalDemo, setIsGeneratingLocalDemo] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const isBusy = isGenerating || isRefreshing;
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const isBusy = isGenerating || isGeneratingLocalDemo || isRefreshing;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void (async () => {
+      try {
+        const history = await api.listHistory();
+        if (isMounted) {
+          setRecentVideos(history.videos ?? []);
+        }
+      } catch {
+        if (isMounted) {
+          setRecentVideos([]);
+        }
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), queueClockRefreshMs);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!video || !canAutoRefreshVideo(video.status) || isGenerating || isRefreshing) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      void refreshVideoById(video.id, true);
+    }, videoAutoRefreshMs);
+
+    return () => window.clearTimeout(timer);
+  }, [video?.id, video?.status, video?.updatedAt, isGenerating, isRefreshing]);
 
   async function handleGenerate(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -43,11 +92,13 @@ export function VideoPage(): ReactElement {
         prompt: trimmedPrompt,
         script: script.trim(),
         imageSize,
+        duration,
         negativePrompt: negativePrompt.trim() || undefined,
         imageDataUrl
       });
 
       setVideo(nextVideo);
+      setRecentVideos((currentVideos) => upsertRecentVideo(currentVideos, nextVideo));
       setStatus({ tone: "success", text: `视频任务已提交：${nextVideo.status}` });
     } catch (error) {
       setStatus({ tone: "error", text: getErrorMessage(error, "生成视频失败，请检查设置后重试。") });
@@ -59,15 +110,119 @@ export function VideoPage(): ReactElement {
   async function handleRefresh(): Promise<void> {
     if (!video) return;
 
-    setIsRefreshing(true);
-    setStatus({ tone: "muted", text: "正在刷新视频状态..." });
+    await refreshVideoById(video.id, false);
+  }
+
+  async function handleGenerateLocalDemo(): Promise<void> {
+    const trimmedPrompt = prompt.trim();
+
+    if (!trimmedPrompt) {
+      setStatus({ tone: "error", text: "请先输入视频提示词。" });
+      return;
+    }
+
+    setIsGeneratingLocalDemo(true);
+    setStatus({ tone: "muted", text: "正在生成本地教学演示..." });
 
     try {
-      const nextVideo = await api.refreshVideo(video.id);
+      const nextDemo = await api.generateLocalTeachingDemo({
+        prompt: trimmedPrompt,
+        script: script.trim() || undefined
+      });
+
+      setLocalDemo(nextDemo);
+      setStatus({ tone: "success", text: "本地教学演示已生成并打开。" });
+    } catch (error) {
+      setStatus({ tone: "error", text: getErrorMessage(error, "生成本地教学演示失败。") });
+    } finally {
+      setIsGeneratingLocalDemo(false);
+    }
+  }
+
+  async function handleRefineVideo(): Promise<void> {
+    if (!video && !localDemo) return;
+
+    const feedback = videoFeedback.trim();
+    if (!feedback) {
+      setStatus({ tone: "error", text: "请先输入修改要求。" });
+      return;
+    }
+
+    setIsGenerating(true);
+    setStatus({ tone: "muted", text: "正在根据修改要求重新提交视频任务..." });
+
+    try {
+      const imageDataUrl = imageFile ? await readFileAsDataUrl(imageFile) : undefined;
+      const refinedInput = createVideoRefinementInput({
+        prompt,
+        script,
+        feedback,
+        video,
+        localDemo
+      });
+      const nextVideo = await api.generateVideo({
+        prompt: refinedInput.prompt,
+        script: refinedInput.script,
+        imageSize,
+        duration,
+        negativePrompt: negativePrompt.trim() || undefined,
+        imageDataUrl
+      });
+
       setVideo(nextVideo);
+      setRecentVideos((currentVideos) => upsertRecentVideo(currentVideos, nextVideo));
+      setVideoFeedback("");
+      setStatus({ tone: "success", text: `视频任务已按修改要求提交：${nextVideo.status}` });
+    } catch (error) {
+      setStatus({ tone: "error", text: getErrorMessage(error, "修改视频失败，请检查设置后重试。") });
+    } finally {
+      setIsGenerating(false);
+    }
+  }
+
+  async function handleRefineLocalDemo(): Promise<void> {
+    if (!video && !localDemo) return;
+
+    const feedback = videoFeedback.trim();
+    if (!feedback) {
+      setStatus({ tone: "error", text: "请先输入修改要求。" });
+      return;
+    }
+
+    setIsGeneratingLocalDemo(true);
+    setStatus({ tone: "muted", text: "正在根据修改要求更新本地演示..." });
+
+    try {
+      const refinedInput = createVideoRefinementInput({
+        prompt,
+        script,
+        feedback,
+        video,
+        localDemo
+      });
+      const nextDemo = await api.generateLocalTeachingDemo(refinedInput);
+
+      setLocalDemo(nextDemo);
+      setVideoFeedback("");
+      setStatus({ tone: "success", text: "本地教学演示已按修改要求生成并打开。" });
+    } catch (error) {
+      setStatus({ tone: "error", text: getErrorMessage(error, "修改本地教学演示失败。") });
+    } finally {
+      setIsGeneratingLocalDemo(false);
+    }
+  }
+
+  async function refreshVideoById(videoId: string, automatic: boolean): Promise<void> {
+    setIsRefreshing(true);
+    setStatus({ tone: "muted", text: automatic ? "正在自动刷新视频状态..." : "正在刷新视频状态..." });
+
+    try {
+      const nextVideo = await api.refreshVideo(videoId);
+      setVideo(nextVideo);
+      setRecentVideos((currentVideos) => upsertRecentVideo(currentVideos, nextVideo));
       setStatus({
         tone: nextVideo.status === "Failed" ? "error" : "success",
-        text: getVideoRefreshStatus(nextVideo)
+        text: getVideoRefreshStatus(nextVideo, automatic)
       });
     } catch (error) {
       setStatus({ tone: "error", text: getErrorMessage(error, "刷新视频状态失败。") });
@@ -128,6 +283,18 @@ export function VideoPage(): ReactElement {
               ))}
             </select>
           </label>
+          <label>
+            <span>视频时长</span>
+            <input
+              type="number"
+              min={minVideoDurationSeconds}
+              max={maxVideoDurationSeconds}
+              step={1}
+              disabled={isBusy}
+              value={duration}
+              onChange={(event) => setDuration(parseVideoDuration(event.target.value))}
+            />
+          </label>
         </fieldset>
         <label>
           <span>负面提示词</span>
@@ -141,6 +308,9 @@ export function VideoPage(): ReactElement {
         </label>
         <div className="form-actions">
           <button type="submit" disabled={isBusy}>生成视频</button>
+          <button type="button" className="secondary-button" disabled={isBusy} onClick={() => void handleGenerateLocalDemo()}>
+            生成本地演示
+          </button>
           <button type="button" className="secondary-button" disabled={isBusy || !video} onClick={() => void handleRefresh()}>
             刷新状态
           </button>
@@ -148,6 +318,60 @@ export function VideoPage(): ReactElement {
       </form>
 
       {imageFile ? <p className="path-output">参考图片：{imageFile.name}</p> : null}
+
+      {video || localDemo ? (
+        <section className="result-section" aria-labelledby="video-refinement-title">
+          <h2 id="video-refinement-title">二次修改</h2>
+          <form className="refinement-form">
+            <label>
+              <span>视频修改要求</span>
+              <textarea
+                rows={3}
+                disabled={isBusy}
+                value={videoFeedback}
+                onChange={(event) => setVideoFeedback(event.target.value)}
+                placeholder="例如：放慢节奏、加入停顿提问、改成竖屏、突出关键公式"
+              />
+            </label>
+            <div className="form-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={isBusy}
+                onClick={() => void handleRefineVideo()}
+              >
+                根据要求重新生成视频
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={isBusy}
+                onClick={() => void handleRefineLocalDemo()}
+              >
+                根据要求修改本地演示
+              </button>
+            </div>
+          </form>
+        </section>
+      ) : null}
+
+      {localDemo ? (
+        <section className="result-section" aria-labelledby="local-demo-result-title">
+          <h2 id="local-demo-result-title">本地教学演示</h2>
+          <dl className="metadata-list">
+            <div>
+              <dt>标题</dt>
+              <dd>{localDemo.title}</dd>
+            </div>
+            <div>
+              <dt>预览</dt>
+              <dd>
+                <a className="secondary-link" href={localDemo.url} target="_blank" rel="noreferrer">打开本地演示</a>
+              </dd>
+            </div>
+          </dl>
+        </section>
+      ) : null}
 
       {video ? (
         <section className="result-section" aria-labelledby="video-result-title">
@@ -165,10 +389,43 @@ export function VideoPage(): ReactElement {
               <dt>尺寸</dt>
               <dd>{video.imageSize ?? imageSize}</dd>
             </div>
+            {video.duration ? (
+              <div>
+                <dt>时长</dt>
+                <dd>{video.duration} 秒</dd>
+              </div>
+            ) : null}
+            {canAutoRefreshVideo(video.status) ? (
+              <div>
+                <dt>排队</dt>
+                <dd>
+                  {formatQueueDuration(video.createdAt, nowMs)}
+                  {isLongQueued(video.createdAt, nowMs) ? (
+                    <span className="inline-warning">排队超过 30 分钟，可能服务商拥堵，建议重试或换模型。</span>
+                  ) : null}
+                </dd>
+              </div>
+            ) : null}
             {video.videoUrl ? (
               <div>
                 <dt>视频</dt>
-                <dd>{video.videoUrl}</dd>
+                <dd>
+                  <VideoPreview video={video} />
+                </dd>
+              </div>
+            ) : null}
+            {video.segmentRequests?.length ? (
+              <div>
+                <dt>片段</dt>
+                <dd>
+                  <SegmentPreviewList video={video} />
+                </dd>
+              </div>
+            ) : null}
+            {video.localVideoPath ? (
+              <div>
+                <dt>本地</dt>
+                <dd>{video.localVideoPath}</dd>
               </div>
             ) : null}
             {video.reason ? (
@@ -178,6 +435,26 @@ export function VideoPage(): ReactElement {
               </div>
             ) : null}
           </dl>
+        </section>
+      ) : null}
+
+      {recentVideos.length > 0 ? (
+        <section className="result-section" aria-labelledby="recent-video-history-title">
+          <h2 id="recent-video-history-title">最近视频记录</h2>
+          <ul className="record-list">
+            {recentVideos.slice(0, 6).map((recentVideo) => (
+              <li key={recentVideo.id}>
+                <strong>视频任务 {recentVideo.id}</strong>
+                <span>历史状态：{recentVideo.status}</span>
+                <span>任务请求：{recentVideo.requestId}</span>
+                {recentVideo.localVideoPath ? <span>本地保存：{recentVideo.localVideoPath}</span> : null}
+                {recentVideo.reason ? <span>{recentVideo.reason}</span> : null}
+                {getVideoPlaybackUrl(recentVideo) ? (
+                  <RecentVideoPreview video={recentVideo} label={`视频任务 ${recentVideo.id} 预览`} />
+                ) : null}
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
     </section>
@@ -204,9 +481,149 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
-function getVideoRefreshStatus(video: VideoRecord): string {
-  if (video.status === "Succeed") return "视频已生成。";
+function parseVideoDuration(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return maxVideoDurationSeconds;
+  }
+
+  return Math.min(maxVideoDurationSeconds, Math.max(minVideoDurationSeconds, Math.round(parsed)));
+}
+
+function getVideoRefreshStatus(video: VideoRecord, automatic = false): string {
+  if (video.status === "Succeed") return video.localVideoPath ? "视频已生成并保存到本地。" : "视频已生成。";
   if (video.status === "Failed") return "视频生成失败。";
 
-  return `视频状态已刷新：${video.status}`;
+  return `${automatic ? "自动刷新" : "视频状态已刷新"}：${video.status}`;
+}
+
+function upsertRecentVideo(videos: VideoRecord[], video: VideoRecord): VideoRecord[] {
+  return [video, ...videos.filter((item) => item.id !== video.id)];
+}
+
+function VideoPreview({ video }: { video: VideoRecord }): ReactElement {
+  const url = getVideoPlaybackUrl(video);
+
+  return (
+    <div className="video-preview-block">
+      <video className="video-preview" controls preload="metadata" src={url} aria-label="生成视频预览" />
+      <div className="record-actions">
+        <a className="secondary-link" href={url} target="_blank" rel="noreferrer">打开视频</a>
+      </div>
+    </div>
+  );
+}
+
+function RecentVideoPreview({ video, label }: { video: VideoRecord; label: string }): ReactElement {
+  const url = getVideoPlaybackUrl(video);
+
+  return (
+    <div className="video-preview-block">
+      <video className="video-preview" controls preload="metadata" src={url} aria-label={label} />
+      <div className="record-actions">
+        <a className="secondary-link" href={url} target="_blank" rel="noreferrer">打开历史视频</a>
+      </div>
+    </div>
+  );
+}
+
+function SegmentPreviewList({ video }: { video: VideoRecord }): ReactElement {
+  return (
+    <div className="video-segment-list">
+      {video.segmentRequests?.map((segment) => {
+        const url = getSegmentPlaybackUrl(segment);
+
+        return (
+          <div className="video-segment-item" key={segment.requestId ?? segment.index}>
+            <p>第 {segment.index} 段：{segment.status}{segment.duration ? `，${segment.duration} 秒` : ""}</p>
+            {url ? (
+              <video className="video-preview" controls preload="metadata" src={url} aria-label={`第 ${segment.index} 段视频预览`} />
+            ) : null}
+            {segment.reason ? <p className="status-text status-error">{segment.reason}</p> : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function canAutoRefreshVideo(status: string): boolean {
+  return status === "InQueue" || status === "InProgress";
+}
+
+function formatQueueDuration(createdAt: string, nowMs: number): string {
+  const minutes = getQueueMinutes(createdAt, nowMs);
+  if (minutes < 1) return "排队：不足 1 分钟";
+  if (minutes < 60) return `排队：${minutes} 分钟`;
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes === 0 ? `排队：${hours} 小时` : `排队：${hours} 小时 ${remainingMinutes} 分钟`;
+}
+
+function isLongQueued(createdAt: string, nowMs: number): boolean {
+  return getQueueMinutes(createdAt, nowMs) >= longQueueWarningMinutes;
+}
+
+function getQueueMinutes(createdAt: string, nowMs: number): number {
+  const createdMs = new Date(createdAt).getTime();
+  if (Number.isNaN(createdMs)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.floor((nowMs - createdMs) / 60_000));
+}
+
+function getVideoPlaybackUrl(video: VideoRecord): string {
+  return video.localVideoPath ? toFileUrl(video.localVideoPath) : video.videoUrl ?? "";
+}
+
+function getSegmentPlaybackUrl(segment: NonNullable<VideoRecord["segmentRequests"]>[number]): string {
+  return segment.localVideoPath ? toFileUrl(segment.localVideoPath) : segment.videoUrl ?? "";
+}
+
+function toFileUrl(filePath: string): string {
+  if (filePath.startsWith("file://")) {
+    return filePath;
+  }
+
+  const normalized = filePath.replace(/\\/g, "/");
+  const prefix = normalized.startsWith("/") ? "file://" : "file:///";
+  const encoded = normalized
+    .split("/")
+    .map((segment, index) => (index === 0 && /^[A-Za-z]:$/.test(segment) ? segment : encodeURIComponent(segment)))
+    .join("/");
+
+  return `${prefix}${encoded}`;
+}
+
+function createVideoRefinementInput(input: {
+  prompt: string;
+  script: string;
+  feedback: string;
+  video?: VideoRecord;
+  localDemo?: LocalTeachingDemoResult;
+}): { prompt: string; script: string } {
+  const currentScript = input.script.trim();
+  const currentPrompt = input.prompt.trim();
+  const videoContext = input.video
+    ? `当前视频任务：${input.video.id}，状态：${input.video.status}，请求：${input.video.requestId}`
+    : "当前视频任务：暂无";
+  const localDemoContext = input.localDemo
+    ? `当前本地演示：${input.localDemo.title}，地址：${input.localDemo.url}`
+    : "当前本地演示：暂无";
+
+  return {
+    prompt: [
+      "请基于以下已有视频/本地演示方案进行二次修改，并输出更符合修改要求的新方案。",
+      `原提示词：${currentPrompt}`,
+      `原脚本/分镜：${currentScript || "暂无"}`,
+      videoContext,
+      localDemoContext,
+      `修改要求：${input.feedback}`
+    ].join("\n\n"),
+    script: currentScript
+      ? `${currentScript}\n\n二次修改要求：${input.feedback}`
+      : `二次修改要求：${input.feedback}`
+  };
 }

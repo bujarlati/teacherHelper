@@ -16,10 +16,13 @@ type SubmitClient = {
     image?: string;
     imageSize?: string;
     negativePrompt?: string;
+    duration?: number;
+    referenceVideo?: string;
   }) => Promise<string>;
 };
 
 type StatusClient = {
+  submitVideo?: SubmitClient["submitVideo"];
   getVideoStatus: (input: {
     apiKey: string;
     requestId: string;
@@ -74,7 +77,8 @@ describe("createVideoTaskFromLesson", () => {
     expect(client.submitVideo).toHaveBeenCalledWith({
       apiKey: "video-key",
       modelName: "Wan-AI/Wan2.2-T2V-A14B",
-      prompt: expect.stringContaining("镜头脚本：画面展示天平左右两边同时增加砝码，保持平衡。")
+      prompt: expect.stringContaining("镜头脚本：画面展示天平左右两边同时增加砝码，保持平衡。"),
+      duration: 15
     });
     expect(record).toMatchObject({
       lessonId: "lesson-1",
@@ -103,6 +107,23 @@ describe("createVideoTaskFromLesson", () => {
       })
     ).rejects.toThrow("请先配置视频模型 API Key 和模型名称。");
     expect(client.submitVideo).not.toHaveBeenCalled();
+  });
+
+  it("uses the matching text-to-video model for lesson videos when settings contain an image-to-video model", async () => {
+    const client: SubmitClient = {
+      submitVideo: vi.fn().mockResolvedValue("request-lesson-1")
+    };
+
+    await createVideoTaskFromLesson({
+      lessonId: "lesson-1",
+      lesson: createLesson(),
+      config: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-I2V-A14B" },
+      client
+    });
+
+    expect(client.submitVideo).toHaveBeenCalledWith(expect.objectContaining({
+      modelName: "Wan-AI/Wan2.2-T2V-A14B"
+    }));
   });
 
   it("does not modify the lesson object", async () => {
@@ -136,7 +157,8 @@ describe("createStandaloneVideoTask", () => {
       script: "Show one jump of A and another jump of B, then highlight A+B.",
       image: "data:image/png;base64,AAA",
       imageSize: "1280x720",
-      negativePrompt: "low quality"
+      negativePrompt: "low quality",
+      duration: 15
     });
 
     expect(client.submitVideo).toHaveBeenCalledWith({
@@ -145,7 +167,8 @@ describe("createStandaloneVideoTask", () => {
       prompt: expect.stringContaining("A number line animation explaining addition."),
       image: "data:image/png;base64,AAA",
       imageSize: "1280x720",
-      negativePrompt: "low quality"
+      negativePrompt: "low quality",
+      duration: 15
     });
     expect(record).toMatchObject({
       requestId: "request-video-1",
@@ -153,7 +176,8 @@ describe("createStandaloneVideoTask", () => {
       prompt: expect.stringContaining("A number line animation explaining addition."),
       script: "Show one jump of A and another jump of B, then highlight A+B.",
       imageSize: "1280x720",
-      negativePrompt: "low quality"
+      negativePrompt: "low quality",
+      duration: 15
     });
     expect(record.lessonId).toBeUndefined();
   });
@@ -201,6 +225,69 @@ describe("refreshVideoTaskStatus", () => {
       apiKey: "video-key",
       requestId: "request-lesson-1"
     });
+  });
+
+  it("submits the next Seedance segment with the previous segment video as reference", async () => {
+    const client: StatusClient = {
+      getVideoStatus: vi.fn().mockResolvedValueOnce({ status: "Succeed", videoUrl: "https://cdn.example.test/1.mp4" }),
+      submitVideo: vi.fn().mockResolvedValueOnce("ark:segment-2")
+    };
+    const task = createVideoRecord({
+      requestId: "segments:ark:segment-1",
+      duration: 60,
+      prompt: buildVideoGenerationPrompt({
+        prompt: "A classroom animation about fraction addition.",
+        script: [
+          "场景 1：展示两个同分母分数。",
+          "场景 2：演示分子相加、分母不变。",
+          "场景 3：演示异分母通分。",
+          "场景 4：总结计算步骤。"
+        ].join("\n")
+      }),
+      script: [
+        "场景 1：展示两个同分母分数。",
+        "场景 2：演示分子相加、分母不变。",
+        "场景 3：演示异分母通分。",
+        "场景 4：总结计算步骤。"
+      ].join("\n"),
+      segmentRequests: [
+        { index: 1, requestId: "ark:segment-1", status: "InQueue", duration: 15 },
+        { index: 2, status: "Pending", duration: 15 },
+        { index: 3, status: "Pending", duration: 15 },
+        { index: 4, status: "Pending", duration: 15 }
+      ]
+    });
+
+    await expect(
+      refreshVideoTaskStatus({
+        task,
+        config: { apiKey: "ark-key", modelName: "doubao-seedance-2-0-260128" },
+        client,
+        now: () => "2026-06-15T05:00:00.000Z"
+      })
+    ).resolves.toMatchObject({
+      status: "InQueue",
+      requestId: "segments:ark:segment-1,ark:segment-2",
+      updatedAt: "2026-06-15T05:00:00.000Z",
+      segmentRequests: [
+        { index: 1, requestId: "ark:segment-1", status: "Succeed", videoUrl: "https://cdn.example.test/1.mp4" },
+        { index: 2, requestId: "ark:segment-2", status: "InQueue", duration: 15 },
+        { index: 3, status: "Pending", duration: 15 },
+        { index: 4, status: "Pending", duration: 15 }
+      ]
+    });
+
+    expect(client.getVideoStatus).toHaveBeenCalledTimes(1);
+    expect(client.submitVideo).toHaveBeenCalledWith(expect.objectContaining({
+      referenceVideo: "https://cdn.example.test/1.mp4",
+      duration: 15,
+      prompt: expect.stringContaining("第 2/4 段")
+    }));
+    const submitVideo = vi.mocked(client.submitVideo as SubmitClient["submitVideo"]);
+    const secondPrompt = submitVideo.mock.calls[0]?.[0].prompt ?? "";
+    expect(secondPrompt).toContain("场景 2：演示分子相加、分母不变。");
+    expect(secondPrompt).not.toContain("场景 1：展示两个同分母分数。");
+    expect(secondPrompt).not.toContain("场景 3：演示异分母通分。");
   });
 
   it("marks a successful provider response without a URL as failed", async () => {

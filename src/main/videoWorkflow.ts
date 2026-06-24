@@ -1,6 +1,7 @@
 import type { VideoRecord } from "./historyStore.js";
 import { submitVideoTask } from "./videoService.js";
-import type { LessonPlan, ModelConfig, VideoTaskStatus } from "../shared/types.js";
+import { createVideoSegmentPrompt } from "./videoSegmentPrompt.js";
+import type { LessonPlan, ModelConfig, VideoSegmentTask, VideoTaskStatus } from "../shared/types.js";
 
 type VideoWorkflowClient = {
   submitVideo(input: {
@@ -10,6 +11,8 @@ type VideoWorkflowClient = {
     image?: string;
     imageSize?: string;
     negativePrompt?: string;
+    duration?: number;
+    referenceVideo?: string;
   }): Promise<string>;
 };
 
@@ -36,12 +39,13 @@ type CreateStandaloneVideoTaskInput = {
   image?: string;
   imageSize?: string;
   negativePrompt?: string;
+  duration?: number;
 };
 
 type RefreshVideoTaskStatusInput = {
   task: VideoRecord;
   config: ModelConfig;
-  client: VideoStatusClient;
+  client: VideoStatusClient & Partial<VideoWorkflowClient>;
   now: () => string;
 };
 
@@ -57,18 +61,26 @@ export async function createVideoTaskFromLesson({
 }: CreateVideoTaskFromLessonInput): Promise<VideoRecord> {
   const task = await submitVideoTask({
     client,
-    config,
+    config: {
+      ...config,
+      modelName: toTextToVideoModelName(config.modelName)
+    },
     prompt: buildVideoGenerationPrompt({
       prompt: lesson.video_prompt,
       script: lesson.video_script
     }),
-    script: lesson.video_script
+    script: lesson.video_script,
+    duration: 15
   });
 
   return {
     ...task,
     lessonId
   };
+}
+
+function toTextToVideoModelName(modelName: string): string {
+  return modelName.replace(/I2V/gi, (match) => match[0] === "i" ? "t2v" : "T2V");
 }
 
 export async function createStandaloneVideoTask({
@@ -78,7 +90,8 @@ export async function createStandaloneVideoTask({
   script,
   image,
   imageSize,
-  negativePrompt
+  negativePrompt,
+  duration
 }: CreateStandaloneVideoTaskInput): Promise<VideoRecord> {
   return submitVideoTask({
     client,
@@ -87,7 +100,8 @@ export async function createStandaloneVideoTask({
     script,
     image,
     imageSize,
-    negativePrompt
+    negativePrompt,
+    duration
   });
 }
 
@@ -114,6 +128,10 @@ export async function refreshVideoTaskStatus({
 }: RefreshVideoTaskStatusInput): Promise<VideoRecord> {
   if (!config.apiKey.trim()) {
     throw new Error(missingVideoApiKeyMessage);
+  }
+
+  if (task.segmentRequests?.length) {
+    return refreshSegmentedVideoTaskStatus({ task, config, client, now });
   }
 
   const statusResult = await client.getVideoStatus({
@@ -155,4 +173,115 @@ export async function refreshVideoTaskStatus({
     ...baseTask,
     reason: statusResult.reason ?? task.reason
   };
+}
+
+async function refreshSegmentedVideoTaskStatus({
+  task,
+  config,
+  client,
+  now
+}: RefreshVideoTaskStatusInput): Promise<VideoRecord> {
+  const updatedSegments: VideoSegmentTask[] = [];
+
+  for (const segment of task.segmentRequests ?? []) {
+    if (segment.status === "Succeed" || segment.status === "Failed") {
+      updatedSegments.push(segment);
+      continue;
+    }
+
+    if (segment.status === "Pending") {
+      const previousSegment = updatedSegments[updatedSegments.length - 1];
+      if (previousSegment?.status === "Succeed" && previousSegment.videoUrl) {
+        if (!client.submitVideo) {
+          throw new Error("视频生成服务未初始化。");
+        }
+
+        const requestId = await client.submitVideo({
+          apiKey: config.apiKey,
+          modelName: config.modelName,
+          prompt: createVideoSegmentPrompt({
+            prompt: task.prompt,
+            script: task.script,
+            index: segment.index,
+            total: task.segmentRequests?.length ?? segment.index,
+            duration: segment.duration,
+            referencePrevious: true
+          }),
+          ...(task.imageSize ? { imageSize: task.imageSize } : {}),
+          ...(task.negativePrompt ? { negativePrompt: task.negativePrompt } : {}),
+          referenceVideo: previousSegment.videoUrl,
+          duration: segment.duration
+        });
+
+        updatedSegments.push({
+          ...segment,
+          requestId,
+          status: "InQueue"
+        });
+        continue;
+      }
+
+      updatedSegments.push(segment);
+      continue;
+    }
+
+    if (!segment.requestId) {
+      updatedSegments.push(segment);
+      continue;
+    }
+
+    const statusResult = await client.getVideoStatus({
+      apiKey: config.apiKey,
+      requestId: segment.requestId
+    });
+
+    updatedSegments.push({
+      ...segment,
+      status: statusResult.status,
+      ...(statusResult.videoUrl ? { videoUrl: statusResult.videoUrl } : {}),
+      ...(statusResult.reason ? { reason: statusResult.reason } : {})
+    });
+  }
+
+  const updatedAt = now();
+  const failedSegment = updatedSegments.find((segment) => segment.status === "Failed");
+  if (failedSegment) {
+    return {
+      ...task,
+      status: "Failed",
+      segmentRequests: updatedSegments,
+      reason: failedSegment.reason ?? `第 ${failedSegment.index} 段视频生成失败。`,
+      updatedAt
+    };
+  }
+
+  const allSucceeded = updatedSegments.every((segment) => segment.status === "Succeed");
+  if (allSucceeded) {
+    return {
+      ...task,
+      status: "Succeed",
+      videoUrl: updatedSegments[0]?.videoUrl,
+      reason: undefined,
+      segmentRequests: updatedSegments,
+      updatedAt
+    };
+  }
+
+  const anyInProgress = updatedSegments.some((segment) => segment.status === "InProgress");
+
+  return {
+    ...task,
+    status: anyInProgress ? "InProgress" : "InQueue",
+    requestId: createSegmentedRequestId(updatedSegments),
+    segmentRequests: updatedSegments,
+    updatedAt
+  };
+}
+
+function createSegmentedRequestId(segments: VideoSegmentTask[]): string {
+  const requestIds = segments
+    .map((segment) => segment.requestId)
+    .filter((requestId): requestId is string => Boolean(requestId));
+
+  return `segments:${requestIds.join(",")}`;
 }

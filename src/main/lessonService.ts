@@ -15,7 +15,7 @@ const modelExampleQuestionSchema = z.preprocess(
   })
 );
 
-const modelLessonPlanSchema = lessonPlanSchema.extend({
+const modelLessonPlanContentSchema = lessonPlanSchema.extend({
   teaching_goals: modelStringListSchema,
   key_points: modelStringListSchema,
   difficult_points: modelStringListSchema,
@@ -40,6 +40,7 @@ const modelLessonPlanSchema = lessonPlanSchema.extend({
   homework_suggestions: modelStringListSchema,
   markdown: lessonPlanSchema.shape.markdown.optional()
 });
+const modelLessonPlanSchema = z.preprocess(normalizeLessonPlanObject, modelLessonPlanContentSchema);
 
 type LessonClient = {
   chatCompletion(input: {
@@ -68,13 +69,18 @@ export async function generateLessonPlan(input: {
     apiKey: input.config.apiKey,
     modelName: input.config.modelName,
     messages: buildLessonPrompt(input.topic),
-    maxTokens: 4096,
+    maxTokens: 8192,
     temperature: 0.4,
     responseFormat: { type: "json_object" },
     thinkingBudget: 64
   });
 
-  const parsedJson = parseLessonJson(stripCodeFence(raw));
+  const parsedJson = await parseOrRepairLessonJson({
+    raw,
+    topic: input.topic,
+    config: input.config,
+    client: input.client
+  });
   const parsedPlan = parseLessonPlan(parsedJson);
 
   return {
@@ -140,11 +146,76 @@ function stripCodeFence(value: string): string {
 }
 
 function parseLessonJson(value: string): unknown {
-  try {
-    return JSON.parse(value);
-  } catch {
-    throw new Error("模型返回的教案 JSON 无法解析，请重试。");
+  const candidates = createJsonCandidates(value);
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // Try the next candidate extracted from the model response.
+    }
   }
+
+  throw new Error("模型返回的教案 JSON 无法解析，请重试。");
+}
+
+async function parseOrRepairLessonJson(input: {
+  raw: string;
+  topic: string;
+  config: ModelConfig;
+  client: LessonClient;
+}): Promise<unknown> {
+  try {
+    return parseLessonJson(input.raw);
+  } catch (parseError) {
+    const repairedRaw = await input.client.chatCompletion({
+      apiKey: input.config.apiKey,
+      modelName: input.config.modelName,
+      messages: buildLessonRepairPrompt(input.topic, input.raw),
+      maxTokens: 8192,
+      temperature: 0,
+      responseFormat: { type: "json_object" },
+      thinkingBudget: 0
+    });
+
+    try {
+      return parseLessonJson(repairedRaw);
+    } catch {
+      throw parseError;
+    }
+  }
+}
+
+function buildLessonRepairPrompt(topic: string, raw: string): ReturnType<typeof buildLessonPrompt> {
+  return [
+    {
+      role: "system" as const,
+      content: [
+        "你是一个严格的 JSON 修复器。",
+        "请把用户提供的教案内容修复为严格 JSON，不要解释，不要使用 Markdown 代码块。",
+        "修复为严格 JSON，必须包含：title, grade_suggestion, teaching_goals, key_points, difficult_points, common_confusions, lesson_flow, board_design, example_questions, worked_solutions, classroom_questions, homework_suggestions, video_script, video_prompt。",
+        "如果原文缺少某些字段，请根据已有内容补出简短、可用于课堂的中文内容。",
+        "lesson_flow 每项必须包含 title, minutes, activities；example_questions 每项必须包含 question, answer；worked_solutions 每项必须包含 question, steps, answer。"
+      ].join("\n")
+    },
+    {
+      role: "user" as const,
+      content: [
+        `知识点：${topic}`,
+        "模型上一次输出如下，请只返回修复后的 JSON：",
+        truncateRepairSource(raw)
+      ].join("\n\n")
+    }
+  ];
+}
+
+function truncateRepairSource(value: string): string {
+  const maxLength = 18_000;
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength)}\n\n[原始输出过长，已截断，请基于以上内容修复 JSON]`;
 }
 
 function parseLessonPlan(value: unknown): ModelLessonPlan {
@@ -177,18 +248,341 @@ function normalizeStringList(value: unknown): unknown {
 
   if (Array.isArray(value)) {
     return value
-      .map((item) => (typeof item === "string" ? cleanListItem(item) : item))
+      .map((item) => {
+        if (typeof item === "string") {
+          return cleanListItem(item);
+        }
+        if (isRecord(item) && !("question" in item)) {
+          return stringifyListRecord(item);
+        }
+
+        return item;
+      })
       .filter((item) => typeof item !== "string" || item.length > 0);
   }
 
+  if (isRecord(value)) {
+    return stringifyListRecordEntries(value);
+  }
+
   return value;
+}
+
+function normalizeLessonPlanObject(value: unknown): unknown {
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  const normalized: Record<string, unknown> = { ...value };
+  if (isMissing(normalized.lesson_flow)) {
+    normalized.lesson_flow = readLessonAlias(value, ["教学流程", "lessonFlow", "flow", "teaching_flow", "teaching_process"])
+      ?? createFallbackLessonFlow(value);
+  }
+  if (normalized.board_design === undefined) {
+    normalized.board_design = readBoardDesignAlias(value) ?? createFallbackBoardDesign(value);
+  }
+  if (isMissing(normalized.example_questions)) {
+    normalized.example_questions = readLessonAlias(value, ["示例题目", "例题", "examples", "exampleQuestions"])
+      ?? createFallbackExampleQuestions(value);
+  }
+  if (isMissing(normalized.worked_solutions)) {
+    normalized.worked_solutions = readLessonAlias(value, ["示例解法", "例题解法", "solutions", "workedSolutions", "worked_examples"])
+      ?? createFallbackWorkedSolutions(value);
+  }
+  if (isMissing(normalized.classroom_questions)) {
+    normalized.classroom_questions = readLessonAlias(value, ["课堂提问", "classroomQuestions", "questions"])
+      ?? createFallbackClassroomQuestions(value);
+  }
+  if (isMissing(normalized.homework_suggestions)) {
+    normalized.homework_suggestions = readLessonAlias(value, ["作业建议", "homework", "homeworkSuggestions"])
+      ?? createFallbackHomeworkSuggestions(value);
+  }
+
+  return normalized;
+}
+
+function isMissing(value: unknown): boolean {
+  return value === undefined || value === null;
+}
+
+function readLessonAlias(value: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    if (!isMissing(value[key])) {
+      return value[key];
+    }
+  }
+
+  return undefined;
+}
+
+function readBoardDesignAlias(value: Record<string, unknown>): unknown {
+  return value["板书设计"] ?? value.blackboard_design ?? value.blackboardDesign ?? value.boardDesign;
+}
+
+function createFallbackLessonFlow(value: Record<string, unknown>): Array<{ title: string; minutes: number; activities: string[] }> {
+  const title = readString(value.title) ?? "本课";
+  const keyPoint = readStringItems(value.key_points)[0] ?? "核心概念";
+  const difficultPoint = readStringItems(value.difficult_points)[0] ?? "关键难点";
+
+  return [
+    {
+      title: "导入与诊断",
+      minutes: 5,
+      activities: [
+        `围绕${title}提出情境问题，检查学生已有经验`,
+        `请学生说出对${keyPoint}的初步理解`
+      ]
+    },
+    {
+      title: "重点讲解",
+      minutes: 15,
+      activities: [
+        `聚焦${keyPoint}，板书核心方法并配合例题说明`,
+        `针对${difficultPoint}进行分步示范`
+      ]
+    },
+    {
+      title: "练习与小结",
+      minutes: 10,
+      activities: ["学生独立完成变式练习，教师追问易错点并总结方法"]
+    }
+  ];
+}
+
+function createFallbackBoardDesign(value: Record<string, unknown>): string[] {
+  const items: string[] = [];
+  const title = readString(value.title);
+  const keyPoints = readStringItems(value.key_points).slice(0, 2);
+  const difficultPoints = readStringItems(value.difficult_points).slice(0, 1);
+  const exampleQuestion = readFirstQuestion(value.worked_solutions) ?? readFirstQuestion(value.example_questions);
+
+  if (title) {
+    items.push(`课题：${title}`);
+  }
+  if (keyPoints.length > 0) {
+    items.push(`重点：${keyPoints.join("；")}`);
+  }
+  if (difficultPoints.length > 0) {
+    items.push(`难点：${difficultPoints.join("；")}`);
+  }
+  if (exampleQuestion) {
+    items.push(`例题：${exampleQuestion}`);
+  }
+
+  return items.length > 0
+    ? items
+    : ["课题：待完善", "重点：梳理核心概念", "例题：选择典型题目讲解", "小结：回顾方法与易错点"];
+}
+
+function createFallbackExampleQuestions(value: Record<string, unknown>): Array<{ question: string; answer: string }> {
+  return [{
+    question: createFallbackQuestion(value),
+    answer: "需教师结合班级情况补充答案"
+  }];
+}
+
+function createFallbackWorkedSolutions(value: Record<string, unknown>): Array<{ question: string; steps: string[]; answer: string }> {
+  return [{
+    question: createFallbackQuestion(value),
+    steps: [
+      "读题并圈出已知量与未知量",
+      "根据等量关系列式或说明理由",
+      "计算或推理后回到原题检验"
+    ],
+    answer: "需教师结合班级情况补充答案"
+  }];
+}
+
+function createFallbackClassroomQuestions(value: Record<string, unknown>): string[] {
+  const keyPoint = readStringItems(value.key_points)[0] ?? "核心概念";
+  const difficultPoint = readStringItems(value.difficult_points)[0] ?? "关键难点";
+
+  return [
+    `${keyPoint}中最容易出错的一步是什么？`,
+    `遇到${difficultPoint}时，可以先找哪些已知条件？`,
+    "你能用自己的话复述今天的方法吗？"
+  ];
+}
+
+function createFallbackHomeworkSuggestions(value: Record<string, unknown>): string[] {
+  const title = readString(value.title) ?? "本课内容";
+
+  return [
+    `完成 3 道与${title}相关的基础练习，并标出关键步骤`,
+    "整理 1 个易错点，写出错误原因和改正方法"
+  ];
+}
+
+function createFallbackQuestion(value: Record<string, unknown>): string {
+  return readFirstQuestion(value.worked_solutions)
+    ?? readFirstQuestion(value.example_questions)
+    ?? `围绕${readString(value.title) ?? "本课内容"}设计一道基础例题。`;
+}
+
+function readStringItems(value: unknown): string[] {
+  const normalized = normalizeStringList(value);
+  return Array.isArray(normalized) ? normalized.filter((item): item is string => typeof item === "string") : [];
+}
+
+function readFirstQuestion(value: unknown): string | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  for (const item of value) {
+    if (typeof item === "string") {
+      const text = cleanListItem(item);
+      if (text) return text;
+      continue;
+    }
+
+    if (isRecord(item)) {
+      const question = readString(item.question);
+      if (question) return question;
+    }
+  }
+
+  return undefined;
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function stringifyListRecord(value: Record<string, unknown>): string {
+  const title = readString(value.title);
+  const description = readString(value.description) ?? readString(value.content) ?? readString(value.task);
+  if (title && description) {
+    return `${title}：${description}`;
+  }
+
+  const entries = stringifyListRecordEntries(value);
+  return entries.join("；");
+}
+
+function stringifyListRecordEntries(value: Record<string, unknown>): string[] {
+  return Object.entries(value)
+    .map(([key, item]) => {
+      const text = stringifyListValue(item);
+      return text ? `${key}: ${text}` : "";
+    })
+    .filter(Boolean);
+}
+
+function stringifyListValue(value: unknown): string {
+  if (typeof value === "string") {
+    return cleanListItem(value);
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(stringifyListValue).filter(Boolean).join("；");
+  }
+  if (isRecord(value)) {
+    return stringifyListRecord(value);
+  }
+
+  return "";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function cleanListItem(value: string): string {
   return value.replace(/^\s*(?:[-*•]\s*)?(?:(?:\d+[.、)]|\(\d+\)|（\d+）)\s*)?/, "").trim();
 }
 
+function createJsonCandidates(value: string): string[] {
+  const trimmed = value.trim();
+  const candidates: string[] = [];
+
+  addCandidate(candidates, stripCodeFence(trimmed));
+
+  for (const fencedJson of readFencedJsonBlocks(trimmed)) {
+    addCandidate(candidates, fencedJson);
+  }
+
+  const objectCandidate = extractFirstJsonObject(trimmed);
+  if (objectCandidate) {
+    addCandidate(candidates, objectCandidate);
+  }
+
+  return candidates;
+}
+
+function addCandidate(candidates: string[], value: string): void {
+  const trimmed = value.trim();
+  if (trimmed && !candidates.includes(trimmed)) {
+    candidates.push(trimmed);
+  }
+}
+
+function readFencedJsonBlocks(value: string): string[] {
+  return Array.from(value.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi), (match) => match[1]?.trim() ?? "").filter(Boolean);
+}
+
+function extractFirstJsonObject(value: string): string | undefined {
+  const start = value.indexOf("{");
+  if (start < 0) {
+    return undefined;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < value.length; index += 1) {
+    const char = value[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+
+    if (char === "{") {
+      depth += 1;
+      continue;
+    }
+
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return value.slice(start, index + 1).trim();
+      }
+    }
+  }
+
+  return undefined;
+}
+
 function normalizeExampleQuestion(value: unknown): unknown {
+  if (isRecord(value)) {
+    const question = readString(value.question) ?? readString(value.题目) ?? readString(value["问题"]);
+    const answer = readString(value.answer) ?? readString(value.solution) ?? readString(value["答案"]) ?? readString(value["解析"]);
+    if (question) {
+      return {
+        ...value,
+        question,
+        answer: answer ?? missingExampleAnswer
+      };
+    }
+
+    return value;
+  }
+
   if (typeof value !== "string") {
     return value;
   }

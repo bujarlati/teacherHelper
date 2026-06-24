@@ -2,7 +2,10 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   AppSettings,
   KnowledgeConnectionTestResult,
+  LessonImageAsset,
   LessonPlan,
+  LocalTeachingDemoInput,
+  LocalTeachingDemoResult,
   LocalQdrantStatus,
   ProblemDemoPlan,
   TextbookIndexItem,
@@ -19,15 +22,36 @@ export type TeacherHelperApi = {
   clearSettings(): Promise<void>;
   testKnowledgeConnections(): Promise<KnowledgeConnectionTestResult>;
   getQdrantStatus(): Promise<LocalQdrantStatus>;
-  indexTextbook(input: { title: string; sourceName: string; items: TextbookIndexItem[] }): Promise<TextbookRecord>;
+  indexTextbook(input: {
+    title: string;
+    sourceName?: string;
+    sourceNames?: string[];
+    items: TextbookIndexItem[];
+  }): Promise<TextbookRecord>;
   listTextbooks(): Promise<TextbookRecord[]>;
   searchTextbooks(input: { query: string; limit?: number }): Promise<TextbookSearchResult[]>;
-  generateLesson(topic: string): Promise<{ id: string; lesson: LessonPlan; videoTask?: VideoTask; videoError?: string }>;
+  generateLesson(topic: string): Promise<{
+    id: string;
+    lesson: LessonPlan;
+    videoTask?: VideoTask;
+    videoError?: string;
+    imageAssets?: LessonImageAsset[];
+    imageError?: string;
+    localDemo?: LocalTeachingDemoResult;
+    demoError?: string;
+  }>;
   exportLessonDocx(input: { id: string; title: string; lesson: LessonPlan }): Promise<string>;
   generateVideo(input: VideoGenerateInput): Promise<VideoRecord>;
+  generateLocalTeachingDemo(input: LocalTeachingDemoInput): Promise<LocalTeachingDemoResult>;
   generateDemo(problem: string): Promise<{ id: string; plan: ProblemDemoPlan; url: string }>;
+  openDemo(demoId: string): Promise<string>;
   refreshVideo(videoId: string): Promise<VideoRecord>;
   listHistory(): Promise<{ lessons: LessonRecord[]; demos: DemoRecord[]; videos: VideoRecord[] }>;
+  deleteHistoryRecord(input: { kind: "lesson" | "demo" | "video"; id: string }): Promise<{
+    lessons: LessonRecord[];
+    demos: DemoRecord[];
+    videos: VideoRecord[];
+  }>;
 };
 
 const teacherHelperApi: TeacherHelperApi = {
@@ -44,16 +68,27 @@ const teacherHelperApi: TeacherHelperApi = {
     lesson: LessonPlan;
     videoTask?: VideoTask;
     videoError?: string;
+    imageAssets?: LessonImageAsset[];
+    imageError?: string;
+    localDemo?: LocalTeachingDemoResult;
+    demoError?: string;
   }>,
   exportLessonDocx: (input) => ipcRenderer.invoke("lesson:exportDocx", input) as Promise<string>,
   generateVideo: (input) => ipcRenderer.invoke("video:generate", input) as Promise<VideoRecord>,
+  generateLocalTeachingDemo: (input) => ipcRenderer.invoke("video:generateLocalDemo", input) as Promise<LocalTeachingDemoResult>,
   generateDemo: (problem) => ipcRenderer.invoke("demo:generate", problem) as Promise<{
     id: string;
     plan: ProblemDemoPlan;
     url: string;
   }>,
+  openDemo: (demoId) => ipcRenderer.invoke("demo:open", demoId) as Promise<string>,
   refreshVideo: (videoId) => ipcRenderer.invoke("video:refresh", videoId) as Promise<VideoRecord>,
   listHistory: () => ipcRenderer.invoke("history:list") as Promise<{
+    lessons: LessonRecord[];
+    demos: DemoRecord[];
+    videos: VideoRecord[];
+  }>,
+  deleteHistoryRecord: (input) => ipcRenderer.invoke("history:delete", input) as Promise<{
     lessons: LessonRecord[];
     demos: DemoRecord[];
     videos: VideoRecord[];

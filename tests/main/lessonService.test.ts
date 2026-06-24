@@ -43,6 +43,7 @@ describe("buildLessonPrompt", () => {
     expect(combined).toContain("video_prompt");
     expect(combined).toContain("只返回 JSON");
     expect(combined).toContain("控制输出体量");
+    expect(combined).toContain("本地互动课件");
   });
 });
 
@@ -67,7 +68,7 @@ describe("generateLessonPlan", () => {
       apiKey: "key",
       modelName: "Qwen/Qwen3-32B",
       messages: buildLessonPrompt("一元一次方程"),
-      maxTokens: 4096,
+      maxTokens: 8192,
       temperature: 0.4,
       responseFormat: { type: "json_object" },
       thinkingBudget: 64
@@ -86,6 +87,73 @@ describe("generateLessonPlan", () => {
         client: fakeClient
       })
     ).resolves.toMatchObject({ title: "一元一次方程" });
+  });
+
+  it("extracts a fenced JSON object when the model adds surrounding text", async () => {
+    const fakeClient = {
+      chatCompletion: async () => [
+        "好的，下面是结构化教案 JSON：",
+        "```json",
+        JSON.stringify(completeLessonPlan()),
+        "```",
+        "如果需要，我也可以继续补充课堂活动。"
+      ].join("\n")
+    };
+
+    await expect(
+      generateLessonPlan({
+        topic: "一元一次方程",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({ title: "一元一次方程" });
+  });
+
+  it("extracts the first complete JSON object when the model adds prose outside JSON", async () => {
+    const fakeClient = {
+      chatCompletion: async () => `教案如下：\n${JSON.stringify(completeLessonPlan())}\n以上 JSON 可直接使用。`
+    };
+
+    await expect(
+      generateLessonPlan({
+        topic: "一元一次方程",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({ title: "一元一次方程" });
+  });
+
+  it("repairs non-JSON lesson output with a follow-up structured conversion request", async () => {
+    const fakeClient = {
+      chatCompletion: vi.fn()
+        .mockResolvedValueOnce([
+          "教案标题：一元一次方程",
+          "建议年级：七年级",
+          "目标：理解一元一次方程，会用等式性质解方程。",
+          "视频脚本：展示天平两边保持平衡，逐步消去砝码。"
+        ].join("\n"))
+        .mockResolvedValueOnce(JSON.stringify(completeLessonPlan()))
+    };
+
+    await expect(
+      generateLessonPlan({
+        topic: "一元一次方程",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({
+      title: "一元一次方程",
+      markdown: expect.stringContaining("## 教学流程")
+    });
+    expect(fakeClient.chatCompletion).toHaveBeenCalledTimes(2);
+    expect(fakeClient.chatCompletion.mock.calls[1][0]).toMatchObject({
+      apiKey: "key",
+      modelName: "Qwen/Qwen3-32B",
+      temperature: 0,
+      responseFormat: { type: "json_object" }
+    });
+    expect(fakeClient.chatCompletion.mock.calls[1][0].messages[0].content).toContain("修复为严格 JSON");
+    expect(fakeClient.chatCompletion.mock.calls[1][0].messages[1].content).toContain("教案标题：一元一次方程");
   });
 
   it("accepts model lesson JSON without markdown because markdown is rendered locally", async () => {
@@ -132,6 +200,126 @@ describe("generateLessonPlan", () => {
     });
   });
 
+  it("fills a useful board design when the model omits board_design", async () => {
+    const { markdown: _markdown, board_design: _boardDesign, ...modelLesson } = completeLessonPlan();
+    const fakeClient = {
+      chatCompletion: vi.fn(async () => JSON.stringify(modelLesson))
+    };
+
+    await expect(
+      generateLessonPlan({
+        topic: "一元一次方程",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({
+      board_design: [
+        "课题：一元一次方程",
+        "重点：方程的解；等式两边同时变形",
+        "难点：从实际情境中找等量关系",
+        "例题：2x + 3 = 11"
+      ],
+      markdown: expect.stringContaining("## 板书设计")
+    });
+  });
+
+  it("accepts Chinese board design keys from model output", async () => {
+    const { markdown: _markdown, board_design: _boardDesign, ...baseLesson } = completeLessonPlan();
+    const modelLesson = {
+      ...baseLesson,
+      板书设计: "设未知数\n列方程\n解方程\n检验"
+    };
+    const fakeClient = {
+      chatCompletion: vi.fn(async () => JSON.stringify(modelLesson))
+    };
+
+    await expect(
+      generateLessonPlan({
+        topic: "一元一次方程",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({
+      board_design: ["设未知数", "列方程", "解方程", "检验"]
+    });
+  });
+
+  it("normalizes object-shaped board design and homework suggestions from model output", async () => {
+    const { markdown: _markdown, ...baseLesson } = completeLessonPlan();
+    const modelLesson = {
+      ...baseLesson,
+      board_design: {
+        main: "Equation: 3x + 2 = 11",
+        steps: ["Subtract 2 from both sides", "Divide both sides by 3"]
+      },
+      homework_suggestions: [
+        { task: "Finish three equation-solving exercises" },
+        { content: "Write one common mistake and explain the reason" },
+        { title: "Preview", description: "Read the next section before class" }
+      ]
+    };
+    const fakeClient = {
+      chatCompletion: vi.fn(async () => JSON.stringify(modelLesson))
+    };
+
+    await expect(
+      generateLessonPlan({
+        topic: "linear equation",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({
+      board_design: [
+        "main: Equation: 3x + 2 = 11",
+        "steps: Subtract 2 from both sides；Divide both sides by 3"
+      ],
+      homework_suggestions: [
+        "task: Finish three equation-solving exercises",
+        "content: Write one common mistake and explain the reason",
+        "Preview：Read the next section before class"
+      ],
+      markdown: expect.stringContaining("Finish three equation-solving exercises")
+    });
+  });
+
+  it("fills omitted lesson detail sections from available model content", async () => {
+    const {
+      markdown: _markdown,
+      lesson_flow: _lessonFlow,
+      example_questions: _exampleQuestions,
+      worked_solutions: _workedSolutions,
+      classroom_questions: _classroomQuestions,
+      homework_suggestions: _homeworkSuggestions,
+      ...modelLesson
+    } = completeLessonPlan();
+    const fakeClient = {
+      chatCompletion: vi.fn(async () => JSON.stringify(modelLesson))
+    };
+
+    await expect(
+      generateLessonPlan({
+        topic: "一元一次方程",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({
+      lesson_flow: [
+        { title: "导入与诊断", minutes: 5, activities: expect.arrayContaining(["围绕一元一次方程提出情境问题，检查学生已有经验"]) },
+        { title: "重点讲解", minutes: 15, activities: expect.arrayContaining(["聚焦方程的解，板书核心方法并配合例题说明"]) },
+        { title: "练习与小结", minutes: 10, activities: expect.arrayContaining(["学生独立完成变式练习，教师追问易错点并总结方法"]) }
+      ],
+      example_questions: [{ question: "围绕一元一次方程设计一道基础例题。", answer: "需教师结合班级情况补充答案" }],
+      worked_solutions: [{
+        question: "围绕一元一次方程设计一道基础例题。",
+        steps: expect.arrayContaining(["读题并圈出已知量与未知量", "根据等量关系列式或说明理由"]),
+        answer: "需教师结合班级情况补充答案"
+      }],
+      classroom_questions: expect.arrayContaining(["方程的解中最容易出错的一步是什么？"]),
+      homework_suggestions: expect.arrayContaining(["完成 3 道与一元一次方程相关的基础练习，并标出关键步骤"]),
+      markdown: expect.stringContaining("## 示例解法")
+    });
+  });
+
   it("normalizes example questions that the model returns as strings", async () => {
     const { markdown: _markdown, ...baseLesson } = completeLessonPlan();
     const modelLesson = {
@@ -165,6 +353,34 @@ describe("generateLessonPlan", () => {
     const modelLesson = {
       ...baseLesson,
       example_questions: ["2x + 3 = 11，求 x 的值。", "小明买笔共花 10 元，每支 2 元，买了几支？"]
+    };
+    const fakeClient = {
+      chatCompletion: vi.fn(async () => JSON.stringify(modelLesson))
+    };
+
+    await expect(
+      generateLessonPlan({
+        topic: "一元一次方程",
+        config: { apiKey: "key", modelName: "Qwen/Qwen3-32B" },
+        client: fakeClient
+      })
+    ).resolves.toMatchObject({
+      example_questions: [
+        { question: "2x + 3 = 11，求 x 的值。", answer: "需教师补充答案" },
+        { question: "小明买笔共花 10 元，每支 2 元，买了几支？", answer: "需教师补充答案" }
+      ],
+      markdown: expect.stringContaining("答：需教师补充答案")
+    });
+  });
+
+  it("fills missing answers on object example questions instead of rejecting the full lesson", async () => {
+    const { markdown: _markdown, ...baseLesson } = completeLessonPlan();
+    const modelLesson = {
+      ...baseLesson,
+      example_questions: [
+        { question: "2x + 3 = 11，求 x 的值。" },
+        { question: "小明买笔共花 10 元，每支 2 元，买了几支？" }
+      ]
     };
     const fakeClient = {
       chatCompletion: vi.fn(async () => JSON.stringify(modelLesson))

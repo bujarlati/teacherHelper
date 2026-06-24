@@ -30,7 +30,7 @@ export function createQdrantClient(options: ClientOptions = {}) {
   }): Promise<Response> {
     const baseUrl = input.url.trim().replace(/\/$/, "");
     if (!baseUrl) {
-      throw new Error("Qdrant 地址不能为空。");
+      throw new Error("Qdrant address cannot be empty.");
     }
 
     const apiKey = input.apiKey.trim();
@@ -63,7 +63,11 @@ export function createQdrantClient(options: ClientOptions = {}) {
       return response;
     } catch (error) {
       if (controller.signal.aborted) {
-        throw new Error("Qdrant 请求超时，请检查地址、网络或本地服务是否启动。");
+        throw new Error("Qdrant request timed out. Please check the address or local vector service.");
+      }
+
+      if (isTransientNetworkError(error)) {
+        throw new Error(`Qdrant 网络连接中断，请确认本地向量库正在运行并稍后重试。原始错误：${getErrorMessage(error)}`);
       }
 
       throw error;
@@ -194,4 +198,24 @@ export function createQdrantClient(options: ClientOptions = {}) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isTransientNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const cause = (error as Error & { cause?: unknown }).cause;
+  const causeCode = typeof cause === "object" && cause !== null && "code" in cause
+    ? String((cause as { code?: unknown }).code)
+    : "";
+
+  return error.message === "fetch failed"
+    || causeCode === "ECONNRESET"
+    || causeCode === "ECONNREFUSED"
+    || causeCode === "ETIMEDOUT";
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : String(error);
 }

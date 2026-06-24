@@ -10,6 +10,14 @@ export type QdrantConfig = {
   collectionPrefix: string;
 };
 
+export type DemoGenerationConfig = {
+  mode: "template" | "ai_html";
+};
+
+export type VideoStorageConfig = {
+  directory: string;
+};
+
 export type LocalQdrantStatus = {
   mode: "local" | "remote";
   status: "starting" | "running" | "stopped" | "missing" | "failed" | "remote";
@@ -24,8 +32,12 @@ export type LocalQdrantStatus = {
 export type AppSettings = {
   textModel: ModelConfig;
   videoModel: ModelConfig;
+  imageModel: ModelConfig;
   embeddingModel: ModelConfig;
+  rerankerModel: ModelConfig;
   qdrant: QdrantConfig;
+  demoGeneration: DemoGenerationConfig;
+  videoStorage: VideoStorageConfig;
 };
 
 export type KnowledgeConnectionTestResult = {
@@ -68,6 +80,10 @@ export type ProblemDemoPlan = {
     speed: number;
     speedUnit: string;
     answerSeconds: number;
+    targetQuantity?: string;
+    answerLabel?: string;
+    answerValue?: number | string;
+    answerUnit?: string;
   };
   equation?: {
     variable: string;
@@ -82,12 +98,44 @@ export type VideoTaskStatus = "Succeed" | "InQueue" | "InProgress" | "Failed";
 
 export type VideoImageSize = "1280x720" | "720x1280" | "960x960";
 
+export type VideoSegmentTask = {
+  index: number;
+  requestId?: string;
+  status: VideoTaskStatus | "Pending";
+  duration: number;
+  videoUrl?: string;
+  localVideoPath?: string;
+  reason?: string;
+};
+
 export type VideoGenerateInput = {
   prompt: string;
   script: string;
   imageDataUrl?: string;
   imageSize: VideoImageSize;
+  duration?: number;
   negativePrompt?: string;
+};
+
+export type LessonImageAsset = {
+  title: string;
+  prompt: string;
+  src: string;
+  localPath?: string;
+};
+
+export type LocalTeachingDemoInput = {
+  prompt: string;
+  script?: string;
+  exampleQuestions?: Array<{ question: string; answer: string }>;
+  workedSolutions?: Array<{ question: string; steps: string[]; answer: string }>;
+  imageAssets?: LessonImageAsset[];
+};
+
+export type LocalTeachingDemoResult = {
+  id: string;
+  title: string;
+  url: string;
 };
 
 export type VideoTask = {
@@ -97,8 +145,11 @@ export type VideoTask = {
   prompt: string;
   script: string;
   imageSize?: string;
+  duration?: number;
   negativePrompt?: string;
   videoUrl?: string;
+  localVideoPath?: string;
+  segmentRequests?: VideoSegmentTask[];
   reason?: string;
   createdAt: string;
   updatedAt: string;
@@ -118,12 +169,22 @@ export type TextbookIndexItem = {
   pageNumber: number;
   imageDataUrl: string;
   cropRect?: TextbookCropRect;
+  sourceName?: string;
+  sourcePageNumber?: number;
+};
+
+export type TextbookSource = {
+  name: string;
+  pageCount: number;
+  itemCount: number;
 };
 
 export type TextbookRecord = {
   id: string;
   title: string;
   sourceName: string;
+  sourceNames?: string[];
+  sources?: TextbookSource[];
   collectionName: string;
   pageCount: number;
   itemCount: number;
@@ -136,11 +197,16 @@ export type TextbookRecord = {
 export type TextbookSearchResult = {
   id: string;
   score: number;
+  rerankScore?: number;
+  rankingSource: "qdrant" | "reranker";
+  rankingMessage?: string;
   textbookId: string;
   title: string;
   sourceName: string;
   pageNumber: number;
+  sourcePageNumber?: number;
   kind: TextbookImageKind;
   imagePath: string;
+  imageDataUrl?: string;
   cropRect?: TextbookCropRect;
 };

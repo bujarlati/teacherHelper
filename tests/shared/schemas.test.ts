@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   appSettingsSchema,
+  defaultImageModelName,
+  defaultRerankerModelName,
   lessonPlanSchema,
   modelConfigSchema,
   problemDemoPlanSchema,
@@ -116,6 +118,67 @@ describe("problemDemoPlanSchema", () => {
 
     expect(parsed.motion?.answerSeconds).toBe(500);
   });
+
+  it("preserves motion answer target metadata for distance problems", () => {
+    const parsed = problemDemoPlanSchema.parse({
+      kind: "motion",
+      title: "往返行程问题",
+      originalProblem: "汽车往返甲乙两地，求两地距离。",
+      knownValues: [
+        { label: "去时速度", value: 60, unit: "千米/时" },
+        { label: "返回速度", value: 40, unit: "千米/时" }
+      ],
+      target: "求甲乙两地的距离",
+      steps: ["设距离为 S", "S/40 - S/60 = 2", "S = 240"],
+      motion: {
+        startLabel: "甲地",
+        endLabel: "乙地",
+        distance: 240,
+        distanceUnit: "千米",
+        speed: 60,
+        speedUnit: "千米/时",
+        answerSeconds: 14400,
+        targetQuantity: "distance",
+        answerValue: 240,
+        answerUnit: "千米"
+      }
+    });
+
+    expect(parsed.motion?.targetQuantity).toBe("distance");
+    expect(parsed.motion?.answerValue).toBe(240);
+    expect(parsed.motion?.answerUnit).toBe("千米");
+  });
+
+  it("accepts open-ended motion answer targets instead of fixed target categories", () => {
+    const parsed = problemDemoPlanSchema.parse({
+      kind: "motion",
+      title: "相遇问题",
+      originalProblem: "甲乙两车相向而行，求相遇地点距离甲地多少千米。",
+      knownValues: [
+        { label: "甲车速度", value: 50, unit: "千米/时" },
+        { label: "乙车速度", value: 30, unit: "千米/时" }
+      ],
+      target: "求相遇地点距离甲地多少千米",
+      steps: ["先求相遇时间", "再求甲车行驶路程"],
+      motion: {
+        startLabel: "甲地",
+        endLabel: "乙地",
+        distance: 160,
+        distanceUnit: "千米",
+        speed: 50,
+        speedUnit: "千米/时",
+        answerSeconds: 7200,
+        targetQuantity: "相遇地点距离甲地",
+        answerLabel: "相遇地点距离甲地",
+        answerValue: 100,
+        answerUnit: "千米"
+      }
+    });
+
+    expect(parsed.motion?.targetQuantity).toBe("相遇地点距离甲地");
+    expect(parsed.motion?.answerLabel).toBe("相遇地点距离甲地");
+    expect(parsed.motion?.answerValue).toBe(100);
+  });
 });
 
 describe("modelConfigSchema", () => {
@@ -130,11 +193,13 @@ describe("modelConfigSchema", () => {
 });
 
 describe("appSettingsSchema", () => {
-  it("accepts text, video, embedding, and qdrant setting groups", () => {
+  it("accepts text, video, image, embedding, and qdrant setting groups", () => {
     const parsed = appSettingsSchema.parse({
       textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
       videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
+      imageModel: { apiKey: "image-key", modelName: "Tongyi-MAI/Z-Image" },
       embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      videoStorage: { directory: "D:\\teacherHelper-videos" },
       qdrant: {
         mode: "remote",
         url: "https://cluster.example.qdrant.io",
@@ -144,13 +209,17 @@ describe("appSettingsSchema", () => {
     });
 
     expect(parsed.videoModel.apiKey).toBe("video-key");
+    expect(parsed.imageModel.modelName).toBe(defaultImageModelName);
     expect(parsed.embeddingModel.modelName).toBe("Qwen/Qwen3-VL-Embedding-8B");
+    expect(parsed.rerankerModel.modelName).toBe(defaultRerankerModelName);
+    expect(parsed.demoGeneration).toEqual({ mode: "template" });
+    expect(parsed.videoStorage).toEqual({ directory: "D:\\teacherHelper-videos" });
     expect(parsed.qdrant.mode).toBe("remote");
     expect(parsed.qdrant.url).toBe("https://cluster.example.qdrant.io");
     expect(parsed.qdrant.collectionPrefix).toBe("teacherhelper");
   });
 
-  it("fills knowledge defaults for older settings files", () => {
+  it("fills knowledge and demo generation defaults for older settings files", () => {
     const parsed = appSettingsSchema.parse({
       textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
       videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" }
@@ -160,18 +229,29 @@ describe("appSettingsSchema", () => {
       apiKey: "",
       modelName: "Qwen/Qwen3-VL-Embedding-8B"
     });
+    expect(parsed.imageModel).toEqual({
+      apiKey: "",
+      modelName: defaultImageModelName
+    });
+    expect(parsed.rerankerModel).toEqual({
+      apiKey: "",
+      modelName: defaultRerankerModelName
+    });
+    expect(parsed.videoStorage).toEqual({ directory: "" });
     expect(parsed.qdrant).toEqual({
       mode: "local",
       url: "http://127.0.0.1:6333",
       apiKey: "",
       collectionPrefix: "teacherhelper"
     });
+    expect(parsed.demoGeneration).toEqual({ mode: "template" });
   });
 
   it("fills local qdrant mode for settings saved before local hosting", () => {
     const parsed = appSettingsSchema.parse({
       textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
       videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
+      imageModel: { apiKey: "image-key", modelName: "Tongyi-MAI/Z-Image" },
       embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
       qdrant: { url: "http://localhost:6333", apiKey: "", collectionPrefix: "teacherhelper" }
     });
@@ -182,6 +262,31 @@ describe("appSettingsSchema", () => {
       apiKey: "",
       collectionPrefix: "teacherhelper"
     });
+  });
+
+  it("keeps explicit reranker settings when present", () => {
+    const parsed = appSettingsSchema.parse({
+      textModel: { apiKey: "text-key", modelName: "Qwen/Qwen3-32B" },
+      videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
+      imageModel: { apiKey: "image-key", modelName: "Tongyi-MAI/Z-Image" },
+      embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      rerankerModel: { apiKey: "rerank-key", modelName: "Qwen/Qwen3-VL-Reranker-8B" }
+    });
+
+    expect(parsed.rerankerModel).toEqual({
+      apiKey: "rerank-key",
+      modelName: "Qwen/Qwen3-VL-Reranker-8B"
+    });
+  });
+
+  it("keeps explicit AI HTML demo generation settings when present", () => {
+    const parsed = appSettingsSchema.parse({
+      textModel: { apiKey: "text-key", modelName: "zai-org/GLM-5.2" },
+      videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
+      demoGeneration: { mode: "ai_html" }
+    });
+
+    expect(parsed.demoGeneration).toEqual({ mode: "ai_html" });
   });
 });
 

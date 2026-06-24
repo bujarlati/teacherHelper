@@ -21,8 +21,29 @@ function errorResponse(status: number, body: string): Response {
   return {
     ok: false,
     status,
-    text: async () => body
+    text: async () => body,
+    headers: new Headers()
   } as Response;
+}
+
+function streamResponse(chunks: string[]): Response {
+  return {
+    ok: true,
+    body: new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) {
+          controller.enqueue(new TextEncoder().encode(chunk));
+        }
+        controller.close();
+      }
+    })
+  } as Response;
+}
+
+function fetchResetError(): TypeError {
+  return Object.assign(new TypeError("fetch failed"), {
+    cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" })
+  });
 }
 
 describe("createSiliconFlowClient", () => {
@@ -61,6 +82,74 @@ describe("createSiliconFlowClient", () => {
           temperature: 0.4,
           response_format: { type: "json_object" },
           thinking_budget: 64
+        })
+      })
+    );
+  });
+
+  it("can stream chat completions and combine SSE delta content", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      streamResponse([
+        "data: {\"choices\":[{\"delta\":{\"content\":\"<!doctype html>\"}}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{\"content\":\"<html></html>\"}}]}\n\n",
+        "data: [DONE]\n\n"
+      ])
+    );
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    const content = await client.chatCompletion({
+      apiKey: "key",
+      modelName: "Pro/zai-org/GLM-5.2",
+      messages: [{ role: "user", content: "build html" }],
+      stream: true
+    } as Parameters<typeof client.chatCompletion>[0] & { stream: boolean });
+
+    expect(content).toBe("<!doctype html><html></html>");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.siliconflow.cn/v1/chat/completions",
+      expect.objectContaining({
+        body: JSON.stringify({
+          model: "Pro/zai-org/GLM-5.2",
+          messages: [{ role: "user", content: "build html" }],
+          stream: true,
+          max_tokens: undefined,
+          temperature: undefined,
+          response_format: undefined,
+          thinking_budget: undefined,
+          reasoning_effort: "max"
+        })
+      })
+    );
+  });
+
+  it("requests max reasoning effort for GLM-5.2 chat completions", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        choices: [{ message: { content: "{\"title\":\"ok\"}" } }]
+      })
+    );
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await client.chatCompletion({
+      apiKey: "key",
+      modelName: "zai-org/GLM-5.2",
+      messages: [{ role: "user", content: "hello" }],
+      maxTokens: 8192,
+      thinkingBudget: 32768
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.siliconflow.cn/v1/chat/completions",
+      expect.objectContaining({
+        body: JSON.stringify({
+          model: "zai-org/GLM-5.2",
+          messages: [{ role: "user", content: "hello" }],
+          stream: false,
+          max_tokens: 8192,
+          temperature: undefined,
+          response_format: undefined,
+          thinking_budget: 32768,
+          reasoning_effort: "max"
         })
       })
     );
@@ -123,6 +212,49 @@ describe("createSiliconFlowClient", () => {
     );
   });
 
+  it("creates images with POST JSON bearer auth", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        images: [{ url: "https://cdn.example.test/lesson-image.png" }],
+        timings: { inference: 1234 },
+        seed: 42
+      })
+    );
+    const client = createSiliconFlowClient({
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      baseUrl: "https://example.test/v1"
+    });
+
+    await expect(client.createImage({
+      apiKey: "key",
+      modelName: "Tongyi-MAI/Z-Image",
+      prompt: "课堂插图：用数轴理解 A+B",
+      imageSize: "1024x1024",
+      negativePrompt: "blurry"
+    })).resolves.toEqual({
+      imageUrl: "https://cdn.example.test/lesson-image.png",
+      seed: 42,
+      inferenceMs: 1234
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://example.test/v1/images/generations",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "Content-Type": "application/json",
+          Authorization: "Bearer key"
+        }),
+        body: JSON.stringify({
+          model: "Tongyi-MAI/Z-Image",
+          prompt: "课堂插图：用数轴理解 A+B",
+          image_size: "1024x1024",
+          negative_prompt: "blurry"
+        })
+      })
+    );
+  });
+
   it("creates embeddings with POST JSON bearer auth", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({
@@ -159,6 +291,38 @@ describe("createSiliconFlowClient", () => {
     );
   });
 
+  it("creates image embeddings with VL image content objects", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: [{ embedding: [0.4, 0.5, 0.6] }]
+      })
+    );
+    const client = createSiliconFlowClient({
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      baseUrl: "https://example.test/v1"
+    });
+
+    await expect(
+      client.createEmbedding({
+        apiKey: "key",
+        modelName: "Qwen/Qwen3-VL-Embedding-8B",
+        input: { image: "data:image/png;base64,AAA" }
+      })
+    ).resolves.toEqual([0.4, 0.5, 0.6]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://example.test/v1/embeddings",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          model: "Qwen/Qwen3-VL-Embedding-8B",
+          input: { image: "data:image/png;base64,AAA" },
+          encoding_format: "float"
+        })
+      })
+    );
+  });
+
   it("rejects invalid embedding responses", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ data: [{ embedding: [] }] }));
     const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
@@ -166,6 +330,137 @@ describe("createSiliconFlowClient", () => {
     await expect(
       client.createEmbedding({ apiKey: "key", modelName: "Qwen/Qwen3-VL-Embedding-8B", input: "hello" })
     ).rejects.toThrow("SiliconFlow returned invalid embedding response");
+  });
+
+  it("rejects invalid image generation responses", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ images: [] }));
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(client.createImage({
+      apiKey: "key",
+      modelName: "Tongyi-MAI/Z-Image",
+      prompt: "lesson image"
+    })).rejects.toThrow("SiliconFlow returned invalid image generation response");
+  });
+
+  it("creates rerank requests with multimodal documents", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        results: [
+          { index: 1, relevance_score: 0.93 },
+          { index: 0, relevance_score: 0.81 }
+        ]
+      })
+    );
+    const client = createSiliconFlowClient({
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      baseUrl: "https://example.test/v1"
+    });
+    const documents = [
+      { text: "七年级数学 第 1 页", image: "data:image/png;base64,AAA" },
+      { text: "七年级数学 第 2 页", image: "data:image/png;base64,BBB" }
+    ];
+
+    await expect(client.rerank({
+      apiKey: "key",
+      modelName: "Qwen/Qwen3-VL-Reranker-8B",
+      query: "一次函数图像怎么讲？",
+      documents,
+      topN: 2,
+      instruction: "请根据老师的问题，将最相关的教材页面排在前面。"
+    })).resolves.toEqual([
+      { index: 1, relevanceScore: 0.93 },
+      { index: 0, relevanceScore: 0.81 }
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://example.test/v1/rerank",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "Content-Type": "application/json",
+          Authorization: "Bearer key"
+        }),
+        body: JSON.stringify({
+          model: "Qwen/Qwen3-VL-Reranker-8B",
+          query: "一次函数图像怎么讲？",
+          documents,
+          instruction: "请根据老师的问题，将最相关的教材页面排在前面。",
+          top_n: 2,
+          return_documents: false
+        })
+      })
+    );
+  });
+
+  it("rejects invalid rerank responses", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ results: [{ index: 0 }] }));
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(client.rerank({
+      apiKey: "key",
+      modelName: "Qwen/Qwen3-VL-Reranker-8B",
+      query: "一次函数",
+      documents: ["page"],
+      topN: 1
+    })).rejects.toThrow("SiliconFlow returned invalid rerank response");
+  });
+
+  it("retries transient network resets before returning an embedding", async () => {
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(fetchResetError())
+      .mockResolvedValueOnce(jsonResponse({ data: [{ embedding: [0.1, 0.2] }] }));
+    const client = createSiliconFlowClient({
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      retryDelayMs: 0
+    });
+
+    await expect(
+      client.createEmbedding({ apiKey: "key", modelName: "Qwen/Qwen3-VL-Embedding-8B", input: { image: "data:image/png;base64,AAA" } })
+    ).resolves.toEqual([0.1, 0.2]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("throws a readable message after repeated transient network failures", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(fetchResetError());
+    const client = createSiliconFlowClient({
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      retryDelayMs: 0
+    });
+
+    await expect(
+      client.createEmbedding({ apiKey: "key", modelName: "Qwen/Qwen3-VL-Embedding-8B", input: { image: "data:image/png;base64,AAA" } })
+    ).rejects.toThrow("SiliconFlow 网络请求中断");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("retries transient SiliconFlow HTTP errors before returning an embedding", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(errorResponse(500, "{\"data\":null}"))
+      .mockResolvedValueOnce(errorResponse(503, "{\"message\":\"overloaded\"}"))
+      .mockResolvedValueOnce(jsonResponse({ data: [{ embedding: [0.9, 0.8] }] }));
+    const client = createSiliconFlowClient({
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      retryDelayMs: 0
+    });
+
+    await expect(
+      client.createEmbedding({ apiKey: "key", modelName: "Qwen/Qwen3-VL-Embedding-8B", input: { image: "data:image/png;base64,AAA" } })
+    ).resolves.toEqual([0.9, 0.8]);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("throws a readable message after repeated transient SiliconFlow HTTP errors", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(errorResponse(500, "{\"data\":null}"));
+    const client = createSiliconFlowClient({
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      retryDelayMs: 0
+    });
+
+    await expect(
+      client.createEmbedding({ apiKey: "key", modelName: "Qwen/Qwen3-VL-Embedding-8B", input: { image: "data:image/png;base64,AAA" } })
+    ).rejects.toThrow("硅基流动服务暂时不可用");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("throws a readable error on non-2xx responses", async () => {
@@ -250,6 +545,42 @@ describe("createSiliconFlowClient", () => {
     vi.useRealTimers();
   });
 
+  it("allows a chat request to override the default timeout for long generations", async () => {
+    vi.useFakeTimers();
+    let observedSignal: AbortSignal | undefined;
+    const fetchMock = vi.fn((_url: string | URL | Request, init?: RequestInit) => {
+      observedSignal = init?.signal ?? undefined;
+
+      return new Promise<Response>((_resolve, reject) => {
+        observedSignal?.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      });
+    });
+    const client = createSiliconFlowClient({
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      timeoutMs: 50
+    });
+
+    const request = client.chatCompletion({
+      apiKey: "key",
+      modelName: "Pro/zai-org/GLM-5.2",
+      messages: [{ role: "user", content: "build a complete html courseware" }],
+      timeoutMs: 500
+    } as Parameters<typeof client.chatCompletion>[0] & { timeoutMs: number }).catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(observedSignal?.aborted).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(450);
+    const error = await request;
+
+    expect(error).toBeInstanceOf(Error);
+    expect(observedSignal?.aborted).toBe(true);
+    vi.useRealTimers();
+  });
+
   it("rejects chat responses without first choice content", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ choices: [] }));
     const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
@@ -300,6 +631,81 @@ describe("createSiliconFlowClient", () => {
     ).rejects.toThrow("SiliconFlow returned invalid video submit response");
   });
 
+  it("submits Seedance video tasks to Volcengine Ark with multimodal content", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: "cgt-seedance-1" }));
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(client.submitVideo({
+      apiKey: "ark-key",
+      modelName: "doubao-seedance-2-0-260128",
+      prompt: "用课堂动画展示分数加法。",
+      image: "data:image/png;base64,AAA",
+      imageSize: "1280x720",
+      negativePrompt: "不要出现错别字",
+      duration: 15
+    })).resolves.toBe("ark:cgt-seedance-1");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ Authorization: "Bearer ark-key" }),
+        body: JSON.stringify({
+          model: "doubao-seedance-2-0-260128",
+          content: [
+            {
+              type: "text",
+              text: "用课堂动画展示分数加法。\n避免出现：不要出现错别字"
+            },
+            {
+              type: "image_url",
+              image_url: { url: "data:image/png;base64,AAA" },
+              role: "reference_image"
+            }
+          ],
+          generate_audio: true,
+          ratio: "16:9",
+          duration: 15,
+          watermark: false
+        })
+      })
+    );
+  });
+
+  it("submits Seedance follow-up segments with a reference video", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: "cgt-seedance-2" }));
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(client.submitVideo({
+      apiKey: "ark-key",
+      modelName: "doubao-seedance-2-0-260128",
+      prompt: "继续讲解第二段。",
+      referenceVideo: "https://cdn.example.test/segment-1.mp4",
+      duration: 15
+    } as Parameters<typeof client.submitVideo>[0] & { referenceVideo: string })).resolves.toBe("ark:cgt-seedance-2");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks",
+      expect.objectContaining({
+        body: JSON.stringify({
+          model: "doubao-seedance-2-0-260128",
+          content: [
+            { type: "text", text: "继续讲解第二段。" },
+            {
+              type: "video_url",
+              video_url: { url: "https://cdn.example.test/segment-1.mp4" },
+              role: "reference_video"
+            }
+          ],
+          generate_audio: true,
+          ratio: "16:9",
+          duration: 15,
+          watermark: false
+        })
+      })
+    );
+  });
+
   it("parses a valid video status and first video URL", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({
@@ -326,6 +732,63 @@ describe("createSiliconFlowClient", () => {
         body: JSON.stringify({ requestId: "req-1" })
       })
     );
+  });
+
+  it("parses a successful Seedance task status from Volcengine Ark", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        id: "cgt-seedance-1",
+        status: "succeeded",
+        content: { video_url: "https://ark.example.test/video.mp4" }
+      })
+    );
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(client.getVideoStatus({ apiKey: "ark-key", requestId: "ark:cgt-seedance-1" })).resolves.toEqual({
+      status: "Succeed",
+      videoUrl: "https://ark.example.test/video.mp4"
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks/cgt-seedance-1",
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.objectContaining({ Authorization: "Bearer ark-key" })
+      })
+    );
+  });
+
+  it("maps Seedance failed and expired task statuses to failed video status", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        status: "expired",
+        error: { message: "task expired" }
+      })
+    );
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(client.getVideoStatus({ apiKey: "ark-key", requestId: "ark:cgt-expired" })).resolves.toEqual({
+      status: "Failed",
+      reason: "task expired"
+    });
+  });
+
+  it("accepts pending video status responses without generated results", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        status: "InQueue",
+        position: 0,
+        reason: "",
+        results: null,
+        requestId: ""
+      })
+    );
+    const client = createSiliconFlowClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(client.getVideoStatus({ apiKey: "key", requestId: "req-1" })).resolves.toEqual({
+      status: "InQueue",
+      reason: ""
+    });
   });
 
   it("rejects invalid video status through schema validation", async () => {

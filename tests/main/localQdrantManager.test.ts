@@ -20,7 +20,11 @@ function responseOk(): Response {
 const settings: AppSettings = {
   textModel: { apiKey: "text-key", modelName: "text-model" },
   videoModel: { apiKey: "video-key", modelName: "video-model" },
+  imageModel: { apiKey: "image-key", modelName: "Tongyi-MAI/Z-Image" },
   embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+  rerankerModel: { apiKey: "rerank-key", modelName: "Qwen/Qwen3-VL-Reranker-8B" },
+  demoGeneration: { mode: "template" },
+  videoStorage: { directory: "" },
   qdrant: { mode: "local", url: "http://127.0.0.1:6333", apiKey: "", collectionPrefix: "teacherhelper" }
 };
 

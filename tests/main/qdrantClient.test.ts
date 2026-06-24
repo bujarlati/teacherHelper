@@ -16,6 +16,12 @@ function errorResponse(status: number, body: string): Response {
   } as Response;
 }
 
+function fetchResetError(): TypeError {
+  return Object.assign(new TypeError("fetch failed"), {
+    cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" })
+  });
+}
+
 describe("createQdrantClient", () => {
   it("tests the collections endpoint with optional api key", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ result: { collections: [] } }));
@@ -55,6 +61,18 @@ describe("createQdrantClient", () => {
     await expect(client.testConnection({ url: "http://localhost:6333", apiKey: "bad" })).rejects.toThrow(
       "Qdrant request failed: 401 unauthorized"
     );
+  });
+
+  it("throws a readable error when the local qdrant connection resets", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(fetchResetError());
+    const client = createQdrantClient({ fetchImpl: fetchMock as unknown as typeof fetch });
+
+    await expect(client.upsertPoints({
+      url: "http://localhost:6333",
+      apiKey: "",
+      collectionName: "teacherhelper_pages",
+      points: [{ id: "point-1", vector: [0.1, 0.2], payload: { textbookId: "book-1" } }]
+    })).rejects.toThrow("Qdrant 网络连接中断");
   });
 
   it("creates a collection when it does not exist", async () => {
