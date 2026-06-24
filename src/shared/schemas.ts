@@ -10,6 +10,7 @@ export const defaultRerankerModelName = "Qwen/Qwen3-VL-Reranker-8B";
 export const defaultImageModelName = "Tongyi-MAI/Z-Image";
 export const defaultQdrantUrl = "http://127.0.0.1:6333";
 export const defaultQdrantCollectionPrefix = "teacherhelper";
+export const defaultVideoStorageDirectory = "";
 
 export const qdrantConfigSchema = z.object({
   mode: z.enum(["local", "remote"]).default("local"),
@@ -20,6 +21,10 @@ export const qdrantConfigSchema = z.object({
 
 export const demoGenerationConfigSchema = z.object({
   mode: z.enum(["template", "ai_html"]).default("template")
+});
+
+export const videoStorageConfigSchema = z.object({
+  directory: z.string().default(defaultVideoStorageDirectory)
 });
 
 export const appSettingsSchema = z.object({
@@ -45,6 +50,9 @@ export const appSettingsSchema = z.object({
   }),
   demoGeneration: demoGenerationConfigSchema.default({
     mode: "template"
+  }),
+  videoStorage: videoStorageConfigSchema.default({
+    directory: defaultVideoStorageDirectory
   })
 });
 

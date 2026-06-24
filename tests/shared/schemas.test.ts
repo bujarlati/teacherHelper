@@ -199,6 +199,7 @@ describe("appSettingsSchema", () => {
       videoModel: { apiKey: "video-key", modelName: "Wan-AI/Wan2.2-T2V-A14B" },
       imageModel: { apiKey: "image-key", modelName: "Tongyi-MAI/Z-Image" },
       embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
+      videoStorage: { directory: "D:\\teacherHelper-videos" },
       qdrant: {
         mode: "remote",
         url: "https://cluster.example.qdrant.io",
@@ -212,6 +213,7 @@ describe("appSettingsSchema", () => {
     expect(parsed.embeddingModel.modelName).toBe("Qwen/Qwen3-VL-Embedding-8B");
     expect(parsed.rerankerModel.modelName).toBe(defaultRerankerModelName);
     expect(parsed.demoGeneration).toEqual({ mode: "template" });
+    expect(parsed.videoStorage).toEqual({ directory: "D:\\teacherHelper-videos" });
     expect(parsed.qdrant.mode).toBe("remote");
     expect(parsed.qdrant.url).toBe("https://cluster.example.qdrant.io");
     expect(parsed.qdrant.collectionPrefix).toBe("teacherhelper");
@@ -235,6 +237,7 @@ describe("appSettingsSchema", () => {
       apiKey: "",
       modelName: defaultRerankerModelName
     });
+    expect(parsed.videoStorage).toEqual({ directory: "" });
     expect(parsed.qdrant).toEqual({
       mode: "local",
       url: "http://127.0.0.1:6333",

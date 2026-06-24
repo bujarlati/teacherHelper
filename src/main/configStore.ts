@@ -6,7 +6,8 @@ import {
   defaultImageModelName,
   defaultQdrantCollectionPrefix,
   defaultQdrantUrl,
-  defaultRerankerModelName
+  defaultRerankerModelName,
+  defaultVideoStorageDirectory
 } from "../shared/schemas.js";
 import type { AppSettings } from "../shared/types.js";
 
@@ -23,7 +24,8 @@ function createEmptySettings(): AppSettings {
       apiKey: "",
       collectionPrefix: defaultQdrantCollectionPrefix
     },
-    demoGeneration: { mode: "template" }
+    demoGeneration: { mode: "template" },
+    videoStorage: { directory: defaultVideoStorageDirectory }
   };
 }
 

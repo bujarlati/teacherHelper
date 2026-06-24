@@ -75,6 +75,7 @@ const appSettings: AppSettings = {
   embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
   rerankerModel: { apiKey: "rerank-key", modelName: "Qwen/Qwen3-VL-Reranker-8B" },
   demoGeneration: { mode: "template" },
+  videoStorage: { directory: "" },
   qdrant: { mode: "local", url: "http://127.0.0.1:6333", apiKey: "", collectionPrefix: "teacherhelper" }
 };
 
@@ -200,6 +201,30 @@ describe("workflow pages", () => {
       expect(window.teacherHelper.saveSettings).toHaveBeenCalledWith({
         ...appSettings,
         demoGeneration: { mode: "ai_html" }
+      });
+    });
+  });
+
+  test("SettingsPage saves a custom video storage directory", async () => {
+    window.teacherHelper.loadSettings = vi.fn().mockResolvedValue(appSettings);
+    window.teacherHelper.saveSettings = vi.fn().mockResolvedValue(undefined);
+    window.teacherHelper.getQdrantStatus = vi.fn().mockResolvedValue({
+      mode: "local",
+      status: "running",
+      url: "http://127.0.0.1:6333"
+    });
+    const { SettingsPage } = await import("../../src/renderer/pages/SettingsPage");
+
+    render(<SettingsPage />);
+
+    const directoryInput = await screen.findByLabelText("视频保存目录");
+    fireEvent.change(directoryInput, { target: { value: "D:\\teacherHelper-videos" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
+
+    await waitFor(() => {
+      expect(window.teacherHelper.saveSettings).toHaveBeenCalledWith({
+        ...appSettings,
+        videoStorage: { directory: "D:\\teacherHelper-videos" }
       });
     });
   });
@@ -600,6 +625,35 @@ describe("workflow pages", () => {
       "https://cdn.example.test/video.mp4"
     );
     expect(screen.getByLabelText("生成视频预览").getAttribute("src")).toBe("https://cdn.example.test/video.mp4");
+  });
+
+  test("VideoPage shows recent video history records", async () => {
+    const savedVideo: VideoRecord = {
+      id: "video-history-1",
+      requestId: "request-history-1",
+      status: "Succeed",
+      prompt: "历史视频提示词",
+      script: "历史脚本",
+      videoUrl: "https://cdn.example.test/history.mp4",
+      localVideoPath: "D:\\teacherHelper-videos\\video-history-1.mp4",
+      createdAt: "2026-06-15T03:04:05.000Z",
+      updatedAt: "2026-06-15T04:05:06.000Z"
+    };
+    window.teacherHelper.listHistory = vi.fn().mockResolvedValue({
+      lessons: [],
+      demos: [],
+      videos: [savedVideo]
+    });
+    const { VideoPage } = await import("../../src/renderer/pages/VideoPage");
+
+    render(<VideoPage />);
+
+    expect(await screen.findByText("最近视频记录")).toBeTruthy();
+    expect(screen.getByText("视频任务 video-history-1")).toBeTruthy();
+    expect(screen.getByText("本地保存：D:\\teacherHelper-videos\\video-history-1.mp4")).toBeTruthy();
+    expect(screen.getByLabelText("视频任务 video-history-1 预览").getAttribute("src")).toBe(
+      "file:///D:/teacherHelper-videos/video-history-1.mp4"
+    );
   });
 
   test("VideoPage generates a local teaching demo from the current prompt and script", async () => {

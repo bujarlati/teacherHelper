@@ -131,6 +131,7 @@ type WorkflowDeps = {
   }): Promise<VideoRecord>;
   downloadVideoFile?(input: {
     dataDir: string;
+    outputDir?: string;
     videoId: string;
     videoUrl: string;
   }): Promise<string>;
@@ -414,7 +415,7 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
       client: deps.client,
       now: deps.now
     });
-    const savedVideo = await saveCompletedVideoLocally(updatedVideo, deps);
+    const savedVideo = await saveCompletedVideoLocally(updatedVideo, deps, settings.videoStorage.directory);
     await deps.historyStore.upsertVideo(savedVideo);
 
     return savedVideo;
@@ -964,18 +965,24 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error && error.message ? error.message : "视频任务提交失败。";
 }
 
-async function saveCompletedVideoLocally(video: VideoRecord, deps: WorkflowDeps): Promise<VideoRecord> {
+async function saveCompletedVideoLocally(
+  video: VideoRecord,
+  deps: WorkflowDeps,
+  configuredOutputDir: string
+): Promise<VideoRecord> {
   if (video.segmentRequests?.length && deps.downloadVideoFile) {
-    return saveCompletedVideoSegmentsLocally(video, deps);
+    return saveCompletedVideoSegmentsLocally(video, deps, configuredOutputDir);
   }
 
   if (video.status !== "Succeed" || !video.videoUrl || video.localVideoPath || !deps.downloadVideoFile) {
     return video;
   }
 
+  const outputDir = getConfiguredVideoOutputDir(configuredOutputDir);
   try {
     const localVideoPath = await deps.downloadVideoFile({
       dataDir: deps.dataDir,
+      ...(outputDir ? { outputDir } : {}),
       videoId: video.id,
       videoUrl: video.videoUrl
     });
@@ -993,13 +1000,18 @@ async function saveCompletedVideoLocally(video: VideoRecord, deps: WorkflowDeps)
   }
 }
 
-async function saveCompletedVideoSegmentsLocally(video: VideoRecord, deps: WorkflowDeps): Promise<VideoRecord> {
+async function saveCompletedVideoSegmentsLocally(
+  video: VideoRecord,
+  deps: WorkflowDeps,
+  configuredOutputDir: string
+): Promise<VideoRecord> {
   if (video.status !== "Succeed" || !video.segmentRequests?.length || !deps.downloadVideoFile) {
     return video;
   }
 
   const segmentRequests = [];
   let downloadError: string | undefined;
+  const outputDir = getConfiguredVideoOutputDir(configuredOutputDir);
 
   for (const segment of video.segmentRequests) {
     if (segment.status !== "Succeed" || !segment.videoUrl || segment.localVideoPath) {
@@ -1010,6 +1022,7 @@ async function saveCompletedVideoSegmentsLocally(video: VideoRecord, deps: Workf
     try {
       const localVideoPath = await deps.downloadVideoFile({
         dataDir: deps.dataDir,
+        ...(outputDir ? { outputDir } : {}),
         videoId: `${video.id}-part-${segment.index}`,
         videoUrl: segment.videoUrl
       });
@@ -1028,6 +1041,11 @@ async function saveCompletedVideoSegmentsLocally(video: VideoRecord, deps: Workf
       ? `视频已生成，但部分片段下载到本地失败：${downloadError}。请尽快打开视频链接保存。`
       : undefined
   };
+}
+
+function getConfiguredVideoOutputDir(value: string): string | undefined {
+  const trimmed = value.trim();
+  return trimmed || undefined;
 }
 
 async function closeDemoServerQuietly(server: DemoServer): Promise<void> {

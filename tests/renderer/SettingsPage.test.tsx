@@ -27,6 +27,9 @@ const storedSettings: AppSettings = {
   demoGeneration: {
     mode: "template"
   },
+  videoStorage: {
+    directory: ""
+  },
   qdrant: {
     mode: "local",
     url: "http://127.0.0.1:6333",
@@ -128,6 +131,9 @@ describe("SettingsPage", () => {
         },
         demoGeneration: {
           mode: "template"
+        },
+        videoStorage: {
+          directory: ""
         },
         qdrant: {
           mode: "local",

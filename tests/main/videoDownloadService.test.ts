@@ -54,4 +54,28 @@ describe("downloadVideoFile", () => {
 
     expect(filePath).toBe(join(dataDir, "videos", "lesson_video_1.mp4"));
   });
+
+  it("downloads into a configured video output directory", async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), "teacherhelper-video-data-"));
+    const outputDir = await mkdtemp(join(tmpdir(), "teacherhelper-video-output-"));
+    tmpDirs.push(dataDir, outputDir);
+    const bytes = Buffer.from("custom-video-bytes");
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "video/mp4" }),
+      arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+    });
+
+    const filePath = await downloadVideoFile({
+      dataDir,
+      outputDir,
+      videoId: "video custom",
+      videoUrl: "https://cdn.example.test/custom.mp4",
+      fetchImpl: fetchImpl as unknown as typeof fetch
+    });
+
+    expect(filePath).toBe(join(outputDir, "video custom.mp4"));
+    await expect(readFile(filePath, "utf8")).resolves.toBe("custom-video-bytes");
+  });
 });

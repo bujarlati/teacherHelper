@@ -5,7 +5,8 @@ import {
   defaultImageModelName,
   defaultQdrantCollectionPrefix,
   defaultQdrantUrl,
-  defaultRerankerModelName
+  defaultRerankerModelName,
+  defaultVideoStorageDirectory
 } from "../../shared/schemas";
 import type { AppSettings, LocalQdrantStatus } from "../../shared/types";
 import { api } from "../api";
@@ -40,6 +41,9 @@ function createEmptySettings(): AppSettings {
     },
     demoGeneration: {
       mode: "template"
+    },
+    videoStorage: {
+      directory: defaultVideoStorageDirectory
     }
   };
 }
@@ -229,6 +233,19 @@ export function SettingsPage(): ReactElement {
                 ...settings,
                 videoModel: { ...settings.videoModel, modelName: event.target.value }
               })}
+            />
+          </label>
+          <label>
+            <span>视频保存目录</span>
+            <input
+              autoComplete="off"
+              disabled={controlsDisabled}
+              value={settings.videoStorage.directory}
+              onChange={(event) => setSettings({
+                ...settings,
+                videoStorage: { directory: event.target.value }
+              })}
+              placeholder="留空则保存到本机应用数据目录"
             />
           </label>
         </fieldset>

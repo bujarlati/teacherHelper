@@ -14,6 +14,10 @@ export type DemoGenerationConfig = {
   mode: "template" | "ai_html";
 };
 
+export type VideoStorageConfig = {
+  directory: string;
+};
+
 export type LocalQdrantStatus = {
   mode: "local" | "remote";
   status: "starting" | "running" | "stopped" | "missing" | "failed" | "remote";
@@ -33,6 +37,7 @@ export type AppSettings = {
   rerankerModel: ModelConfig;
   qdrant: QdrantConfig;
   demoGeneration: DemoGenerationConfig;
+  videoStorage: VideoStorageConfig;
 };
 
 export type KnowledgeConnectionTestResult = {

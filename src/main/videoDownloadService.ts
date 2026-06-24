@@ -3,6 +3,7 @@ import { extname, join } from "node:path";
 
 type DownloadVideoFileInput = {
   dataDir: string;
+  outputDir?: string;
   videoId: string;
   videoUrl: string;
   fetchImpl?: typeof fetch;
@@ -18,7 +19,7 @@ export async function downloadVideoFile(input: DownloadVideoFileInput): Promise<
     throw new Error(`视频下载失败：HTTP ${response.status}`);
   }
 
-  const videosDir = join(input.dataDir, "videos");
+  const videosDir = input.outputDir?.trim() || join(input.dataDir, "videos");
   await mkdir(videosDir, { recursive: true });
 
   const extension = inferVideoExtension(input.videoUrl, response.headers.get("content-type"));

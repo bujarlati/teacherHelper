@@ -26,6 +26,7 @@ export function VideoPage(): ReactElement {
   const [negativePrompt, setNegativePrompt] = useState("");
   const [imageFile, setImageFile] = useState<File | undefined>();
   const [video, setVideo] = useState<VideoRecord | undefined>();
+  const [recentVideos, setRecentVideos] = useState<VideoRecord[]>([]);
   const [localDemo, setLocalDemo] = useState<LocalTeachingDemoResult | undefined>();
   const [videoFeedback, setVideoFeedback] = useState("");
   const [status, setStatus] = useState<StatusMessage>({ tone: "muted", text: "输入提示词后生成视频。" });
@@ -34,6 +35,27 @@ export function VideoPage(): ReactElement {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const isBusy = isGenerating || isGeneratingLocalDemo || isRefreshing;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void (async () => {
+      try {
+        const history = await api.listHistory();
+        if (isMounted) {
+          setRecentVideos(history.videos ?? []);
+        }
+      } catch {
+        if (isMounted) {
+          setRecentVideos([]);
+        }
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), queueClockRefreshMs);
@@ -76,6 +98,7 @@ export function VideoPage(): ReactElement {
       });
 
       setVideo(nextVideo);
+      setRecentVideos((currentVideos) => upsertRecentVideo(currentVideos, nextVideo));
       setStatus({ tone: "success", text: `视频任务已提交：${nextVideo.status}` });
     } catch (error) {
       setStatus({ tone: "error", text: getErrorMessage(error, "生成视频失败，请检查设置后重试。") });
@@ -147,6 +170,7 @@ export function VideoPage(): ReactElement {
       });
 
       setVideo(nextVideo);
+      setRecentVideos((currentVideos) => upsertRecentVideo(currentVideos, nextVideo));
       setVideoFeedback("");
       setStatus({ tone: "success", text: `视频任务已按修改要求提交：${nextVideo.status}` });
     } catch (error) {
@@ -195,6 +219,7 @@ export function VideoPage(): ReactElement {
     try {
       const nextVideo = await api.refreshVideo(videoId);
       setVideo(nextVideo);
+      setRecentVideos((currentVideos) => upsertRecentVideo(currentVideos, nextVideo));
       setStatus({
         tone: nextVideo.status === "Failed" ? "error" : "success",
         text: getVideoRefreshStatus(nextVideo, automatic)
@@ -412,6 +437,26 @@ export function VideoPage(): ReactElement {
           </dl>
         </section>
       ) : null}
+
+      {recentVideos.length > 0 ? (
+        <section className="result-section" aria-labelledby="recent-video-history-title">
+          <h2 id="recent-video-history-title">最近视频记录</h2>
+          <ul className="record-list">
+            {recentVideos.slice(0, 6).map((recentVideo) => (
+              <li key={recentVideo.id}>
+                <strong>视频任务 {recentVideo.id}</strong>
+                <span>历史状态：{recentVideo.status}</span>
+                <span>任务请求：{recentVideo.requestId}</span>
+                {recentVideo.localVideoPath ? <span>本地保存：{recentVideo.localVideoPath}</span> : null}
+                {recentVideo.reason ? <span>{recentVideo.reason}</span> : null}
+                {getVideoPlaybackUrl(recentVideo) ? (
+                  <RecentVideoPreview video={recentVideo} label={`视频任务 ${recentVideo.id} 预览`} />
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
     </section>
   );
 }
@@ -452,6 +497,10 @@ function getVideoRefreshStatus(video: VideoRecord, automatic = false): string {
   return `${automatic ? "自动刷新" : "视频状态已刷新"}：${video.status}`;
 }
 
+function upsertRecentVideo(videos: VideoRecord[], video: VideoRecord): VideoRecord[] {
+  return [video, ...videos.filter((item) => item.id !== video.id)];
+}
+
 function VideoPreview({ video }: { video: VideoRecord }): ReactElement {
   const url = getVideoPlaybackUrl(video);
 
@@ -460,6 +509,19 @@ function VideoPreview({ video }: { video: VideoRecord }): ReactElement {
       <video className="video-preview" controls preload="metadata" src={url} aria-label="生成视频预览" />
       <div className="record-actions">
         <a className="secondary-link" href={url} target="_blank" rel="noreferrer">打开视频</a>
+      </div>
+    </div>
+  );
+}
+
+function RecentVideoPreview({ video, label }: { video: VideoRecord; label: string }): ReactElement {
+  const url = getVideoPlaybackUrl(video);
+
+  return (
+    <div className="video-preview-block">
+      <video className="video-preview" controls preload="metadata" src={url} aria-label={label} />
+      <div className="record-actions">
+        <a className="secondary-link" href={url} target="_blank" rel="noreferrer">打开历史视频</a>
       </div>
     </div>
   );

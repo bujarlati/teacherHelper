@@ -108,6 +108,7 @@ const completeSettings: AppSettings = {
   embeddingModel: { apiKey: "embedding-key", modelName: "Qwen/Qwen3-VL-Embedding-8B" },
   rerankerModel: { apiKey: "rerank-key", modelName: "Qwen/Qwen3-VL-Reranker-8B" },
   demoGeneration: { mode: "template" },
+  videoStorage: { directory: "" },
   qdrant: { mode: "local", url: "http://127.0.0.1:6333", apiKey: "", collectionPrefix: "teacherhelper" }
 };
 
@@ -1027,6 +1028,57 @@ describe("registerWorkflowIpcHandlers", () => {
       videoUrl: "https://cdn.example.test/video.mp4"
     });
     expect(upsertVideo).toHaveBeenCalledWith(downloadedVideo);
+  });
+
+  it("downloads completed videos into the configured video storage directory", async () => {
+    const fakeIpcMain = createFakeIpcMain();
+    const customVideoDir = "D:\\teacherHelper-videos";
+    const queuedVideo: VideoRecord = {
+      id: "video-1",
+      requestId: "request-1",
+      status: "InQueue",
+      prompt: "prompt",
+      script: "script",
+      createdAt: "2026-06-15T03:04:05.000Z",
+      updatedAt: "2026-06-15T03:04:05.000Z"
+    };
+    const refreshedVideo: VideoRecord = {
+      ...queuedVideo,
+      status: "Succeed",
+      videoUrl: "https://cdn.example.test/video.mp4",
+      updatedAt: "2026-06-15T04:05:06.000Z"
+    };
+    const downloadVideoFile = vi.fn().mockResolvedValue("D:\\teacherHelper-videos\\video-1.mp4");
+    const upsertVideo = vi.fn().mockResolvedValue(undefined);
+
+    registerWorkflowIpcHandlers(fakeIpcMain, createBaseDeps({
+      configStore: {
+        load: vi.fn().mockResolvedValue({
+          ...completeSettings,
+          videoStorage: { directory: customVideoDir }
+        })
+      },
+      historyStore: {
+        addLesson: vi.fn(),
+        addDemo: vi.fn(),
+        upsertVideo,
+        listLessons: vi.fn(),
+        listDemos: vi.fn(),
+        listVideos: vi.fn().mockResolvedValue([queuedVideo])
+      },
+      refreshVideoTaskStatus: vi.fn().mockResolvedValue(refreshedVideo),
+      downloadVideoFile
+    }));
+
+    await expect(fakeIpcMain.handlers.get("video:refresh")?.({}, "video-1")).resolves.toMatchObject({
+      localVideoPath: "D:\\teacherHelper-videos\\video-1.mp4"
+    });
+    expect(downloadVideoFile).toHaveBeenCalledWith({
+      dataDir: tmpDir,
+      outputDir: customVideoDir,
+      videoId: "video-1",
+      videoUrl: "https://cdn.example.test/video.mp4"
+    });
   });
 
   it("tests knowledge connections using current settings", async () => {
