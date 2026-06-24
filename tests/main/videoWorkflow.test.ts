@@ -16,6 +16,7 @@ type SubmitClient = {
     image?: string;
     imageSize?: string;
     negativePrompt?: string;
+    duration?: number;
   }) => Promise<string>;
 };
 
@@ -74,7 +75,8 @@ describe("createVideoTaskFromLesson", () => {
     expect(client.submitVideo).toHaveBeenCalledWith({
       apiKey: "video-key",
       modelName: "Wan-AI/Wan2.2-T2V-A14B",
-      prompt: expect.stringContaining("镜头脚本：画面展示天平左右两边同时增加砝码，保持平衡。")
+      prompt: expect.stringContaining("镜头脚本：画面展示天平左右两边同时增加砝码，保持平衡。"),
+      duration: 15
     });
     expect(record).toMatchObject({
       lessonId: "lesson-1",
@@ -153,7 +155,8 @@ describe("createStandaloneVideoTask", () => {
       script: "Show one jump of A and another jump of B, then highlight A+B.",
       image: "data:image/png;base64,AAA",
       imageSize: "1280x720",
-      negativePrompt: "low quality"
+      negativePrompt: "low quality",
+      duration: 15
     });
 
     expect(client.submitVideo).toHaveBeenCalledWith({
@@ -162,7 +165,8 @@ describe("createStandaloneVideoTask", () => {
       prompt: expect.stringContaining("A number line animation explaining addition."),
       image: "data:image/png;base64,AAA",
       imageSize: "1280x720",
-      negativePrompt: "low quality"
+      negativePrompt: "low quality",
+      duration: 15
     });
     expect(record).toMatchObject({
       requestId: "request-video-1",
@@ -170,7 +174,8 @@ describe("createStandaloneVideoTask", () => {
       prompt: expect.stringContaining("A number line animation explaining addition."),
       script: "Show one jump of A and another jump of B, then highlight A+B.",
       imageSize: "1280x720",
-      negativePrompt: "low quality"
+      negativePrompt: "low quality",
+      duration: 15
     });
     expect(record.lessonId).toBeUndefined();
   });

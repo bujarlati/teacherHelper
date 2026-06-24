@@ -641,7 +641,8 @@ describe("createSiliconFlowClient", () => {
       prompt: "用课堂动画展示分数加法。",
       image: "data:image/png;base64,AAA",
       imageSize: "1280x720",
-      negativePrompt: "不要出现错别字"
+      negativePrompt: "不要出现错别字",
+      duration: 15
     })).resolves.toBe("ark:cgt-seedance-1");
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -664,7 +665,7 @@ describe("createSiliconFlowClient", () => {
           ],
           generate_audio: true,
           ratio: "16:9",
-          duration: 11,
+          duration: 15,
           watermark: false
         })
       })

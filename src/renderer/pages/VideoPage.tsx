@@ -15,11 +15,14 @@ const imageSizes: VideoImageSize[] = ["1280x720", "720x1280", "960x960"];
 const videoAutoRefreshMs = 30_000;
 const queueClockRefreshMs = 60_000;
 const longQueueWarningMinutes = 30;
+const minVideoDurationSeconds = 4;
+const maxVideoDurationSeconds = 15;
 
 export function VideoPage(): ReactElement {
   const [prompt, setPrompt] = useState("");
   const [script, setScript] = useState("");
   const [imageSize, setImageSize] = useState<VideoImageSize>("1280x720");
+  const [duration, setDuration] = useState(maxVideoDurationSeconds);
   const [negativePrompt, setNegativePrompt] = useState("");
   const [imageFile, setImageFile] = useState<File | undefined>();
   const [video, setVideo] = useState<VideoRecord | undefined>();
@@ -67,6 +70,7 @@ export function VideoPage(): ReactElement {
         prompt: trimmedPrompt,
         script: script.trim(),
         imageSize,
+        duration,
         negativePrompt: negativePrompt.trim() || undefined,
         imageDataUrl
       });
@@ -137,6 +141,7 @@ export function VideoPage(): ReactElement {
         prompt: refinedInput.prompt,
         script: refinedInput.script,
         imageSize,
+        duration,
         negativePrompt: negativePrompt.trim() || undefined,
         imageDataUrl
       });
@@ -253,6 +258,18 @@ export function VideoPage(): ReactElement {
               ))}
             </select>
           </label>
+          <label>
+            <span>视频时长</span>
+            <input
+              type="number"
+              min={minVideoDurationSeconds}
+              max={maxVideoDurationSeconds}
+              step={1}
+              disabled={isBusy}
+              value={duration}
+              onChange={(event) => setDuration(parseVideoDuration(event.target.value))}
+            />
+          </label>
         </fieldset>
         <label>
           <span>负面提示词</span>
@@ -347,6 +364,12 @@ export function VideoPage(): ReactElement {
               <dt>尺寸</dt>
               <dd>{video.imageSize ?? imageSize}</dd>
             </div>
+            {video.duration ? (
+              <div>
+                <dt>时长</dt>
+                <dd>{video.duration} 秒</dd>
+              </div>
+            ) : null}
             {canAutoRefreshVideo(video.status) ? (
               <div>
                 <dt>排队</dt>
@@ -403,6 +426,15 @@ function readFileAsDataUrl(file: File): Promise<string> {
 
 function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function parseVideoDuration(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return maxVideoDurationSeconds;
+  }
+
+  return Math.min(maxVideoDurationSeconds, Math.max(minVideoDurationSeconds, Math.round(parsed)));
 }
 
 function getVideoRefreshStatus(video: VideoRecord, automatic = false): string {

@@ -9,6 +9,7 @@ type VideoSubmitClient = {
     image?: string;
     imageSize?: string;
     negativePrompt?: string;
+    duration?: number;
   }): Promise<string>;
 };
 
@@ -30,6 +31,7 @@ type SubmitVideoTaskInput = {
   image?: string;
   imageSize?: string;
   negativePrompt?: string;
+  duration?: number;
 };
 
 type PollVideoUntilDoneInput = {
@@ -49,6 +51,7 @@ type PollVideoResult = {
 
 const missingVideoConfigMessage = "请先配置视频模型 API Key 和模型名称。";
 const timeoutMessage = "视频生成轮询超时，请稍后在任务历史中重试。";
+const defaultVideoDurationSeconds = 15;
 
 export async function submitVideoTask(input: SubmitVideoTaskInput): Promise<VideoTask> {
   if (!input.config.apiKey.trim() || !input.config.modelName.trim()) {
@@ -69,6 +72,7 @@ export async function submitVideoTask(input: SubmitVideoTaskInput): Promise<Vide
   if (input.image) submitInput.image = input.image;
   if (input.imageSize) submitInput.imageSize = input.imageSize;
   if (input.negativePrompt) submitInput.negativePrompt = input.negativePrompt;
+  submitInput.duration = input.duration ?? defaultVideoDurationSeconds;
 
   const requestId = await input.client.submitVideo(submitInput);
   const now = new Date().toISOString();
@@ -80,6 +84,7 @@ export async function submitVideoTask(input: SubmitVideoTaskInput): Promise<Vide
     prompt: input.prompt,
     script: input.script,
     imageSize: input.imageSize,
+    duration: input.duration ?? defaultVideoDurationSeconds,
     negativePrompt: input.negativePrompt,
     createdAt: now,
     updatedAt: now

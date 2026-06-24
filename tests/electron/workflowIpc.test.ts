@@ -416,6 +416,7 @@ describe("registerWorkflowIpcHandlers", () => {
       script: " Show A then B. ",
       imageDataUrl: "data:image/png;base64,AAA",
       imageSize: "960x960",
+      duration: 15,
       negativePrompt: " blurry "
     })).resolves.toEqual(videoTask);
     expect(createStandaloneVideoTask).toHaveBeenCalledWith({
@@ -425,6 +426,7 @@ describe("registerWorkflowIpcHandlers", () => {
       script: "Show A then B.",
       image: "data:image/png;base64,AAA",
       imageSize: "960x960",
+      duration: 15,
       negativePrompt: "blurry"
     });
     expect(upsertVideo).toHaveBeenCalledWith(videoTask);

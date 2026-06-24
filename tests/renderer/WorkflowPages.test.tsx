@@ -568,9 +568,10 @@ describe("workflow pages", () => {
     render(<VideoPage />);
 
     fireEvent.change(screen.getByLabelText("提示词"), { target: { value: "A number line animation." } });
-    fireEvent.change(screen.getByLabelText("脚本/分镜"), { target: { value: "Show A then B." } });
-    fireEvent.change(screen.getByLabelText("尺寸"), { target: { value: "960x960" } });
-    fireEvent.change(screen.getByLabelText("负面提示词"), { target: { value: "blurry" } });
+      fireEvent.change(screen.getByLabelText("脚本/分镜"), { target: { value: "Show A then B." } });
+      fireEvent.change(screen.getByLabelText("尺寸"), { target: { value: "960x960" } });
+      fireEvent.change(screen.getByLabelText("视频时长"), { target: { value: "15" } });
+      fireEvent.change(screen.getByLabelText("负面提示词"), { target: { value: "blurry" } });
     fireEvent.change(screen.getByLabelText("参考图片"), {
       target: { files: [new File(["image-bytes"], "diagram.png", { type: "image/png" })] }
     });
@@ -581,6 +582,7 @@ describe("workflow pages", () => {
         prompt: "A number line animation.",
         script: "Show A then B.",
         imageSize: "960x960",
+        duration: 15,
         negativePrompt: "blurry",
         imageDataUrl: expect.stringMatching(/^data:image\/png;base64,/)
       });

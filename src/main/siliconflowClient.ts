@@ -401,6 +401,7 @@ export function createSiliconFlowClient(options: ClientOptions = {}) {
       imageSize?: string;
       image?: string;
       negativePrompt?: string;
+      duration?: number;
     }): Promise<string> {
       if (isSeedanceModel(input.modelName)) {
         const data = await requestJson(`${arkVideoBaseUrl}/contents/generations/tasks`, input.apiKey, {
@@ -519,6 +520,7 @@ function createSeedanceSubmitBody(input: {
   imageSize?: string;
   image?: string;
   negativePrompt?: string;
+  duration?: number;
 }): Record<string, JsonValue | undefined> {
   const content: JsonValue[] = [{
     type: "text",
@@ -540,7 +542,7 @@ function createSeedanceSubmitBody(input: {
     content,
     generate_audio: true,
     ratio: getSeedanceRatio(input.imageSize),
-    duration: 11,
+    duration: input.duration ?? 15,
     watermark: false
   };
 }

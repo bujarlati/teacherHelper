@@ -10,6 +10,7 @@ type VideoWorkflowClient = {
     image?: string;
     imageSize?: string;
     negativePrompt?: string;
+    duration?: number;
   }): Promise<string>;
 };
 
@@ -36,6 +37,7 @@ type CreateStandaloneVideoTaskInput = {
   image?: string;
   imageSize?: string;
   negativePrompt?: string;
+  duration?: number;
 };
 
 type RefreshVideoTaskStatusInput = {
@@ -65,7 +67,8 @@ export async function createVideoTaskFromLesson({
       prompt: lesson.video_prompt,
       script: lesson.video_script
     }),
-    script: lesson.video_script
+    script: lesson.video_script,
+    duration: 15
   });
 
   return {
@@ -85,7 +88,8 @@ export async function createStandaloneVideoTask({
   script,
   image,
   imageSize,
-  negativePrompt
+  negativePrompt,
+  duration
 }: CreateStandaloneVideoTaskInput): Promise<VideoRecord> {
   return submitVideoTask({
     client,
@@ -94,7 +98,8 @@ export async function createStandaloneVideoTask({
     script,
     image,
     imageSize,
-    negativePrompt
+    negativePrompt,
+    duration
   });
 }
 

@@ -10,6 +10,7 @@ type SubmitClient = {
     image?: string;
     imageSize?: string;
     negativePrompt?: string;
+    duration?: number;
   }) => Promise<string>;
 };
 
@@ -34,19 +35,22 @@ describe("submitVideoTask", () => {
       client,
       config,
       prompt: "A clear classroom animation about equation balance.",
-      script: "Show a balance scale with both sides changing together."
+      script: "Show a balance scale with both sides changing together.",
+      duration: 15
     });
 
     expect(client.submitVideo).toHaveBeenCalledWith({
       apiKey: "video-key",
       modelName: "Wan-AI/Wan2.2-T2V-A14B",
-      prompt: "A clear classroom animation about equation balance."
+      prompt: "A clear classroom animation about equation balance.",
+      duration: 15
     });
     expect(task).toMatchObject({
       requestId: "request-123",
       status: "InQueue",
       prompt: "A clear classroom animation about equation balance.",
-      script: "Show a balance scale with both sides changing together."
+      script: "Show a balance scale with both sides changing together.",
+      duration: 15
     });
     expect(task.id).toEqual(expect.any(String));
     expect(task.id).not.toHaveLength(0);
@@ -66,7 +70,8 @@ describe("submitVideoTask", () => {
       script: "Start from the textbook image, then animate the key line segment.",
       image: "data:image/png;base64,AAA",
       imageSize: "960x960",
-      negativePrompt: "blurry, distorted text"
+      negativePrompt: "blurry, distorted text",
+      duration: 15
     });
 
     expect(client.submitVideo).toHaveBeenCalledWith({
@@ -75,14 +80,16 @@ describe("submitVideoTask", () => {
       prompt: "A geometric diagram comes alive with labels and arrows.",
       image: "data:image/png;base64,AAA",
       imageSize: "960x960",
-      negativePrompt: "blurry, distorted text"
+      negativePrompt: "blurry, distorted text",
+      duration: 15
     });
     expect(task).toMatchObject({
       requestId: "request-image-1",
       prompt: "A geometric diagram comes alive with labels and arrows.",
       script: "Start from the textbook image, then animate the key line segment.",
       imageSize: "960x960",
-      negativePrompt: "blurry, distorted text"
+      negativePrompt: "blurry, distorted text",
+      duration: 15
     });
   });
 

@@ -121,6 +121,7 @@ type WorkflowDeps = {
     image?: string;
     imageSize?: string;
     negativePrompt?: string;
+    duration?: number;
   }): Promise<VideoRecord>;
   refreshVideoTaskStatus(input: {
     task: VideoRecord;
@@ -177,6 +178,7 @@ const generateVideoInputSchema = z.object({
   script: z.string().trim().optional().default(""),
   imageDataUrl: optionalTrimmedStringSchema,
   imageSize: videoImageSizeSchema.default("1280x720"),
+  duration: z.number().int().min(4).max(15).default(15),
   negativePrompt: optionalTrimmedStringSchema
 });
 const localTeachingDemoInputSchema = z.object({
@@ -371,6 +373,7 @@ export function registerWorkflowIpcHandlers(ipcMainLike: IpcMainLike, deps: Work
       script: parsed.script,
       image: parsed.imageDataUrl,
       imageSize: parsed.imageSize,
+      duration: parsed.duration,
       negativePrompt: parsed.negativePrompt
     });
     await deps.historyStore.upsertVideo(videoTask);

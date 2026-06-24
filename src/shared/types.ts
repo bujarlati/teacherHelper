@@ -98,6 +98,7 @@ export type VideoGenerateInput = {
   script: string;
   imageDataUrl?: string;
   imageSize: VideoImageSize;
+  duration?: number;
   negativePrompt?: string;
 };
 
@@ -129,6 +130,7 @@ export type VideoTask = {
   prompt: string;
   script: string;
   imageSize?: string;
+  duration?: number;
   negativePrompt?: string;
   videoUrl?: string;
   localVideoPath?: string;
