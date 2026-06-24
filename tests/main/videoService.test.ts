@@ -103,7 +103,12 @@ describe("submitVideoTask", () => {
       client,
       config: { apiKey: "ark-key", modelName: "doubao-seedance-2-0-260128" },
       prompt: "用课堂动画讲解分数加法。",
-      script: "先讲同分母，再讲异分母，最后总结。",
+      script: [
+        "场景 1：用两个同样大小的圆饼展示同分母分数。",
+        "场景 2：把同分母分数的分子相加，分母不变。",
+        "场景 3：用通分动画展示异分母分数变成同分母。",
+        "场景 4：总结分数加法先看分母，再计算。"
+      ].join("\n"),
       duration: 60
     });
 
@@ -112,6 +117,9 @@ describe("submitVideoTask", () => {
       duration: 15,
       prompt: expect.stringContaining("第 1/4 段")
     }));
+    const firstPrompt = vi.mocked(client.submitVideo).mock.calls[0]?.[0].prompt ?? "";
+    expect(firstPrompt).toContain("场景 1：用两个同样大小的圆饼展示同分母分数。");
+    expect(firstPrompt).not.toContain("场景 2：把同分母分数的分子相加，分母不变。");
     expect(task).toMatchObject({
       requestId: "segments:ark:segment-1",
       status: "InQueue",

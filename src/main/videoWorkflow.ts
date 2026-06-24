@@ -1,5 +1,6 @@
 import type { VideoRecord } from "./historyStore.js";
 import { submitVideoTask } from "./videoService.js";
+import { createVideoSegmentPrompt } from "./videoSegmentPrompt.js";
 import type { LessonPlan, ModelConfig, VideoSegmentTask, VideoTaskStatus } from "../shared/types.js";
 
 type VideoWorkflowClient = {
@@ -198,7 +199,14 @@ async function refreshSegmentedVideoTaskStatus({
         const requestId = await client.submitVideo({
           apiKey: config.apiKey,
           modelName: config.modelName,
-          prompt: createSegmentPrompt(task.prompt, segment.index, task.segmentRequests?.length ?? segment.index, segment.duration),
+          prompt: createVideoSegmentPrompt({
+            prompt: task.prompt,
+            script: task.script,
+            index: segment.index,
+            total: task.segmentRequests?.length ?? segment.index,
+            duration: segment.duration,
+            referencePrevious: true
+          }),
           ...(task.imageSize ? { imageSize: task.imageSize } : {}),
           ...(task.negativePrompt ? { negativePrompt: task.negativePrompt } : {}),
           referenceVideo: previousSegment.videoUrl,
@@ -268,14 +276,6 @@ async function refreshSegmentedVideoTaskStatus({
     segmentRequests: updatedSegments,
     updatedAt
   };
-}
-
-function createSegmentPrompt(prompt: string, index: number, total: number, duration: number): string {
-  return [
-    prompt,
-    `这是完整教学视频的第 ${index}/${total} 段，本段约 ${duration} 秒。`,
-    "请以上一段视频作为连续性参考，延续相同角色、构图、板书、配色、镜头运动和讲解节奏；本段只推进下一个清晰小步骤。"
-  ].join("\n");
 }
 
 function createSegmentedRequestId(segments: VideoSegmentTask[]): string {

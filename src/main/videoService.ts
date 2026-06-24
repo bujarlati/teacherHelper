@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ModelConfig, VideoSegmentTask, VideoTask, VideoTaskStatus } from "../shared/types.js";
+import { createVideoSegmentPrompt } from "./videoSegmentPrompt.js";
 
 type VideoSubmitClient = {
   submitVideo(input: {
@@ -105,7 +106,13 @@ async function submitSegmentedVideoTask(input: SubmitVideoTaskInput, requestedDu
   const firstRequestId = await input.client.submitVideo({
     apiKey: input.config.apiKey,
     modelName: input.config.modelName,
-    prompt: createSegmentPrompt(input.prompt, 1, segments.length, firstDuration),
+    prompt: createVideoSegmentPrompt({
+      prompt: input.prompt,
+      script: input.script,
+      index: 1,
+      total: segments.length,
+      duration: firstDuration
+    }),
     ...(input.image ? { image: input.image } : {}),
     ...(input.imageSize ? { imageSize: input.imageSize } : {}),
     ...(input.negativePrompt ? { negativePrompt: input.negativePrompt } : {}),
@@ -155,14 +162,6 @@ function createVideoSegments(duration: number): number[] {
   }
 
   return segments;
-}
-
-function createSegmentPrompt(prompt: string, index: number, total: number, duration: number): string {
-  return [
-    prompt,
-    `这是完整教学视频的第 ${index}/${total} 段，本段约 ${duration} 秒。`,
-    "请保持与前后片段的视觉风格、角色、板书和讲解节奏一致；本段只讲一个清晰小步骤，结尾自然衔接下一段。"
-  ].join("\n");
 }
 
 export async function pollVideoUntilDone(input: PollVideoUntilDoneInput): Promise<PollVideoResult> {

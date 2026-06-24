@@ -235,6 +235,21 @@ describe("refreshVideoTaskStatus", () => {
     const task = createVideoRecord({
       requestId: "segments:ark:segment-1",
       duration: 60,
+      prompt: buildVideoGenerationPrompt({
+        prompt: "A classroom animation about fraction addition.",
+        script: [
+          "场景 1：展示两个同分母分数。",
+          "场景 2：演示分子相加、分母不变。",
+          "场景 3：演示异分母通分。",
+          "场景 4：总结计算步骤。"
+        ].join("\n")
+      }),
+      script: [
+        "场景 1：展示两个同分母分数。",
+        "场景 2：演示分子相加、分母不变。",
+        "场景 3：演示异分母通分。",
+        "场景 4：总结计算步骤。"
+      ].join("\n"),
       segmentRequests: [
         { index: 1, requestId: "ark:segment-1", status: "InQueue", duration: 15 },
         { index: 2, status: "Pending", duration: 15 },
@@ -268,6 +283,11 @@ describe("refreshVideoTaskStatus", () => {
       duration: 15,
       prompt: expect.stringContaining("第 2/4 段")
     }));
+    const submitVideo = vi.mocked(client.submitVideo as SubmitClient["submitVideo"]);
+    const secondPrompt = submitVideo.mock.calls[0]?.[0].prompt ?? "";
+    expect(secondPrompt).toContain("场景 2：演示分子相加、分母不变。");
+    expect(secondPrompt).not.toContain("场景 1：展示两个同分母分数。");
+    expect(secondPrompt).not.toContain("场景 3：演示异分母通分。");
   });
 
   it("marks a successful provider response without a URL as failed", async () => {
